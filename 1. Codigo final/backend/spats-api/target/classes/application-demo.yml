@@ -1,0 +1,6 @@
+# Perfil de demostración: si la base no tiene máquinas, carga los datos de las semanas 37 y 38 del R2.2
+# (libros de spats-algoritmo/datos). Se usa junto con dev: --spring.profiles.active=dev,demo
+spats:
+  demo:
+    carpeta-datos: ${SPATS_DEMO_DATOS:../../spats-algoritmo/spats-algoritmo/datos}
+    libros: S37-B.xlsx,S38-B.xlsx

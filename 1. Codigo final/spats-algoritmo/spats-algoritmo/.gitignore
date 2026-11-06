@@ -1,0 +1,8 @@
+target/
+resultados/
+*.jar
+*.class
+.idea/
+.vscode/
+*.iml
+~$*.xlsx

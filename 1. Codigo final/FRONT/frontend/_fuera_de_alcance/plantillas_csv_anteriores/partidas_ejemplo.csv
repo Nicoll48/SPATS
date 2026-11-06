@@ -1,0 +1,9 @@
+partida_codigo,pedido_codigo,articulo_codigo,kg,maquina_compatible,estado
+P-260901,PED-26001,ART-1001,425,M1,Pendiente
+P-260902,PED-26001,ART-1001,425,M2,Pendiente
+P-260903,PED-26002,ART-1002,620,M3,Pendiente
+P-260904,PED-26003,ART-1003,370,M1,Pendiente
+P-260905,PED-26003,ART-1003,370,M2,Pendiente
+P-260906,PED-26004,ART-1004,490,M4,Pendiente
+P-260907,PED-26004,ART-1004,490,M5,Pendiente
+P-260908,PED-26005,ART-1005,560,M3,Pendiente

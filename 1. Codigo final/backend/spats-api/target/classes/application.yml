@@ -1,0 +1,46 @@
+# Configuración base de la API de SPATS. Los secretos llegan por variables de entorno.
+spring:
+  application:
+    name: spats-api
+  profiles:
+    default: dev
+  datasource:
+    url: ${SPATS_DB_URL:jdbc:postgresql://localhost:5432/tintoreria}
+    username: ${SPATS_DB_USUARIO:postgres}
+    password: ${SPATS_DB_CONTRASENA:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      # La base se crea con BD/BD.sql; Hibernate solo verifica que las entidades coincidan con ella.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+  jackson:
+    default-property-inclusion: always
+
+server:
+  port: ${SPATS_PUERTO:8080}
+  error:
+    include-message: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+spats:
+  zona-horaria: America/Lima
+  seguridad:
+    jwt-secreto: ${SPATS_JWT_SECRETO}
+    # Sin actividad durante este periodo, la sesión se cierra (RF04).
+    duracion-inactividad: 30m
+    origenes-permitidos: ${SPATS_ORIGENES:http://localhost:5173}

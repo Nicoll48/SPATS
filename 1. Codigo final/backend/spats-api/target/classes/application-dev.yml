@@ -1,0 +1,8 @@
+# Perfil de desarrollo local. NO usar en producción: la clave solo sirve para pruebas en esta máquina.
+spats:
+  seguridad:
+    jwt-secreto: ${SPATS_JWT_SECRETO:clave-de-desarrollo-local-spats-no-usar-en-produccion}
+
+logging:
+  level:
+    pe.edu.pucp.spats: INFO

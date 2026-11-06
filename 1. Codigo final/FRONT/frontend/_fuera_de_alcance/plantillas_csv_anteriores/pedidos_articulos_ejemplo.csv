@@ -1,0 +1,6 @@
+pedido_codigo,cliente,fecha_entrega,articulo_codigo,descripcion,color,kg
+PED-26001,Textiles Andinos,2026-09-11,ART-1001,Jersey 30/1,Azul marino,850
+PED-26002,Confecciones Lima,2026-09-12,ART-1002,Rib 1x1,Negro,620
+PED-26003,Exportadora Sur,2026-09-14,ART-1003,Pique 24/1,Rojo vino,740
+PED-26004,Moda Peruana,2026-09-15,ART-1004,Franela 20/1,Gris melange,980
+PED-26005,Industria Cotton,2026-09-16,ART-1005,Jersey 40/1,Verde olivo,560
