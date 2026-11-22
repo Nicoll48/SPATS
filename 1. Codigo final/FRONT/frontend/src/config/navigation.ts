@@ -6,6 +6,10 @@ import {
   Database,
   AlertTriangle,
   History,
+  FileText,
+  Layers3,
+  Boxes,
+  Palette,
 } from 'lucide-react'
 
 /**
@@ -45,6 +49,19 @@ export function isNavGroup(item: NavItem): item is NavGroup {
   return 'children' in item
 }
 
+/** Ruta de navegación (breadcrumb) de la página activa: [grupo, página] o solo [página]. */
+export function findNavTrail(pathname: string): string[] {
+  for (const item of navigation) {
+    if (isNavGroup(item)) {
+      const child = item.children.find((leaf) => leaf.path === pathname)
+      if (child) return [item.label, child.label]
+    } else if (item.path === pathname) {
+      return [item.label]
+    }
+  }
+  return ['Planificación Textil']
+}
+
 /** Resuelve el título de página (Topbar, <title>, breadcrumbs) a partir de la ruta activa. */
 export function findNavLabel(pathname: string): string {
   for (const item of navigation) {
@@ -61,7 +78,19 @@ export function findNavLabel(pathname: string): string {
 export const navigation: NavItem[] = [
   { id: 'planificacion', label: 'Planificación semanal', icon: CalendarRange, path: '/' },
   { id: 'datos', label: 'Carga de datos', icon: UploadCloud, path: '/datos-semanales' },
-  { id: 'datos-registrados', label: 'Datos registrados', icon: Database, path: '/datos-registrados' },
+  // Carbon: cada tipo de dato con su propio listado, filtros y acciones va en su propia página.
+  {
+    id: 'datos-registrados',
+    label: 'Datos registrados',
+    icon: Database,
+    children: [
+      { id: 'reg-pedidos', label: 'Pedidos', icon: FileText, path: '/datos-registrados/pedidos' },
+      { id: 'reg-articulos', label: 'Artículos', icon: Layers3, path: '/datos-registrados/articulos' },
+      { id: 'reg-partidas', label: 'Partidas', icon: Boxes, path: '/datos-registrados/partidas' },
+      { id: 'reg-colores', label: 'Colores', icon: Palette, path: '/datos-registrados/colores' },
+      { id: 'reg-proyeccion', label: 'Proyección de tejeduría', icon: CalendarRange, path: '/datos-registrados/proyeccion' },
+    ],
+  },
   { id: 'maquinas', label: 'Máquinas', icon: Cog, path: '/maquinas' },
   { id: 'incidencias', label: 'Incidencias y replanificación', icon: AlertTriangle, path: '/incidencias' },
   { id: 'historial', label: 'Historial', icon: History, path: '/historial' },

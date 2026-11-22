@@ -18,17 +18,18 @@ class FuncionObjetivoTest {
     @Test
     @DisplayName("PU-15 Cálculo del desbalance semanal y diario")
     void desbalance() {
-        // 10 partidas para una máquina con objetivo 16: 3, 3, 2, 2, 0, 0, 0
+        // 10 partidas para una máquina con objetivo 16 (D-48): meta = 10, desfase 0.5,
+        // floor(10·j/7 + 0.5) = 1, 3, 4, 6, 7, 9, 10 → 1, 2, 1, 2, 1, 2, 1
         InstanciaSemana I = ConstructorInstancia.construir(new DatosPrueba().maquina("M200-1", 200, 16).pedido("P1", dia(20))
                 .partidasIguales("X", 10, Tonalidad.CLARO).stock("A", 1000).construir());
         Solucion s = SimuladorConformacion.simular(I, new ReglaReferencia());
         Evaluacion e = new FuncionObjetivo(1, 1, 0.25).evaluar(I, s);
-        assertArrayEquals(new int[] { 3, 3, 2, 2, 0, 0, 0 }, e.calendario.partidasPorDia[0]);
+        assertArrayEquals(new int[] { 1, 2, 1, 2, 1, 2, 1 }, e.calendario.partidasPorDia[0]);
         assertEquals(36, e.desbalanceSemanal);    // (10 − 16)²
-        assertEquals(12, e.desbalanceDiario);     // tres días con 2 partidas faltantes: 3 × 2²
+        assertEquals(4, e.desbalanceDiario);      // cuatro días con 1 partida faltante: 4 × 1²
         assertEquals(0, e.lavados);
-        assertEquals(48.0, e.F, 1e-9);
-        assertEquals(84.0, new FuncionObjetivo(2, 1, 0.25).evaluar(I, s).F, 1e-9);   // α = 2: 2 · 36 + 12
+        assertEquals(40.0, e.F, 1e-9);
+        assertEquals(76.0, new FuncionObjetivo(2, 1, 0.25).evaluar(I, s).F, 1e-9);   // α = 2: 2 · 36 + 4
     }
 
     @Test
@@ -45,7 +46,8 @@ class FuncionObjetivoTest {
         assertFalse(e.requiereLavado[0]);
         assertTrue(e.requiereLavado[1]);
         assertFalse(e.requiereLavado[2]);                     // Claro → Medio no requiere lavado
-        assertArrayEquals(new int[] { 3, 0, 0, 0, 0, 0, 0 }, e.calendario.partidasPorDia[0]);
-        assertEquals(169 + 24 + 0.25, e.F, 1e-9);             // E_S = (3 − 16)², E_D = 6 días × 2², Λ = 1
+        // D-48: meta 3, floor(3·j/7 + 0.5) = 0, 1, 1, 2, 2, 3, 3 → una partida martes, jueves y sábado
+        assertArrayEquals(new int[] { 0, 1, 0, 1, 0, 1, 0 }, e.calendario.partidasPorDia[0]);
+        assertEquals(169 + 19 + 0.25, e.F, 1e-9);             // E_S = (3 − 16)², E_D = 4 × 2² + 3 × 1², Λ = 1
     }
 }

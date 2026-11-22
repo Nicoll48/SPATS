@@ -65,7 +65,7 @@ class TraductorResultadoTest {
     }
 
     @Test
-    @DisplayName("Bloqueada: la tela priorizada para otra partida y la que tuvo kilos de algún artículo; sin ningún kilo no se registra")
+    @DisplayName("Bloqueada: la tela priorizada para otra partida, la que tuvo kilos de algún artículo y la que no tiene máquina compatible (D-51); sin ningún kilo no se registra")
     void clasificaBloqueadasSegunLaSeccion62() {
         ResultadoTraducido t = traducir(semana());
 
@@ -73,8 +73,10 @@ class TraductorResultadoTest {
         String conformada = t.partidas().getFirst().numeroPartida();
         assertThat(conformada).isIn("P1", "P5");
         String perdedora = conformada.equals("P1") ? "P5" : "P1";
-        assertThat(t.bloqueadas()).containsExactlyInAnyOrder(perdedora, "P2");   // P3 sigue PENDIENTE sin registrarse
-        assertThat(t.advertencias()).anyMatch(a -> a.contains("P4") && a.contains("sin máquina registrada"));
+        // P3 sigue PENDIENTE sin registrarse; P4 (barca 300, sin máquina de 300) queda Bloqueada con el motivo de D-51
+        assertThat(t.bloqueadas()).containsExactlyInAnyOrder(perdedora, "P2", "P4");
+        assertThat(t.motivosBloqueo()).containsEntry("P4", "Ninguna máquina de su capacidad acepta su tonalidad")
+                .containsKeys(perdedora, "P2").doesNotContainKey("P3");
     }
 
     @Test

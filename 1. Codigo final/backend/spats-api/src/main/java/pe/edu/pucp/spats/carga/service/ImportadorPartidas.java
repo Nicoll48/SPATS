@@ -8,7 +8,6 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -19,6 +18,8 @@ import pe.edu.pucp.spats.carga.hoja.ValidacionLibro;
 import pe.edu.pucp.spats.comun.dominio.Barca;
 import pe.edu.pucp.spats.comun.dominio.ClasificacionColor;
 import pe.edu.pucp.spats.comun.hoja.LectorLibro;
+import pe.edu.pucp.spats.maquina.entity.MaquinaTintoreria;
+import pe.edu.pucp.spats.maquina.service.CompatibilidadMaquinas;
 import pe.edu.pucp.spats.maquina.service.MaquinaService;
 import pe.edu.pucp.spats.pedido.entity.DetallePedido;
 import pe.edu.pucp.spats.pedido.entity.Pedido;
@@ -37,9 +38,10 @@ import pe.edu.pucp.spats.partida.repository.PartidaRepository;
  * Reglas de validación:
  * <ul>
  *   <li>el pedido de la partida ya debe estar registrado; cada componente, ser un artículo de ese pedido;</li>
- *   <li>la barca tiene el formato "capacidad letra" y su letra coincide con la clasificación del color (D-07);</li>
+ *   <li>la barca empieza con un número, la capacidad (D-51); su letra es informativa y no se valida;</li>
  *   <li>cada partida tiene al menos un componente PRINCIPAL;</li>
- *   <li>si la barca no tiene ninguna máquina registrada, se avisa para corregir el dato (D-12).</li>
+ *   <li>si ninguna máquina de su capacidad acepta su tonalidad, la partida se acepta con un aviso: al generar
+ *       quedará Bloqueada mientras siga así, porque la configuración de las máquinas puede cambiar (D-51).</li>
  * </ul>
  */
 @Component
@@ -86,7 +88,7 @@ public class ImportadorPartidas {
                 .collect(Collectors.toMap(d -> d.getPedido().getNumeroOp() + "|" + d.getArticulo().getCodigo(), Function.identity()));
         Map<String, Color> coloresRegistrados = colores.findByCodigoColorIn(filasPartida.stream().map(FilaPartida::codigoColor).collect(Collectors.toSet()))
                 .stream().collect(Collectors.toMap(Color::getCodigoColor, Function.identity()));
-        Set<String> barcasConMaquina = maquinas.barcasRegistradas();
+        List<MaquinaTintoreria> parque = maquinas.todas();
 
         // ----- validación cruzada
         Map<String, FilaPartida> nuevas = new LinkedHashMap<>();
@@ -105,9 +107,7 @@ public class ImportadorPartidas {
                 v.error(HOJA_PARTIDAS, f.numero(), Columnas.NUMERO_OP, "El pedido " + f.numeroOp()
                         + " no está registrado. Carga primero la plantilla de pedidos.");
             validarColor(v, f, coloresRegistrados.get(f.codigoColor()), colorEnArchivo);
-            if (f.barca() != null && !barcasConMaquina.contains(f.barca()))
-                v.advertencia(HOJA_PARTIDAS, f.numero(), Columnas.BARCA, "La partida " + f.numeroPartida()
-                        + " tiene una barca sin máquina registrada (" + f.barca() + "); corrige el dato o registra la máquina.");
+            avisarSinMaquinaCompatible(v, f, coloresRegistrados.get(f.codigoColor()), parque);
             nuevas.put(f.numeroPartida(), f);
         }
         Map<String, List<FilaComponente>> componentesPorPartida = new LinkedHashMap<>();
@@ -152,10 +152,16 @@ public class ImportadorPartidas {
         return resultado.construir(v.advertencias());
     }
 
+    /** D-51: sin máquina de su capacidad que acepte su tonalidad, se acepta con aviso. Si el color ya existe, manda su tonalidad registrada. */
+    private static void avisarSinMaquinaCompatible(ValidacionLibro v, FilaPartida f, Color registrado, List<MaquinaTintoreria> parque) {
+        if (f.barca() == null) return;
+        TonalidadColor tonalidad = registrado != null ? registrado.getTonalidad() : f.tonalidad();
+        if (!CompatibilidadMaquinas.hayCompatible(parque, f.barca(), tonalidad))
+            v.advertencia(HOJA_PARTIDAS, f.numero(), Columnas.BARCA,
+                    CompatibilidadMaquinas.avisoSinCompatible(f.numeroPartida(), tonalidad, f.barca()));
+    }
+
     private static void validarColor(ValidacionLibro v, FilaPartida f, Color registrado, Map<String, FilaPartida> colorEnArchivo) {
-        if (f.barca() != null && Barca.interpretar(f.barca()).map(b -> b.clasificacion() != f.clasificacion()).orElse(false))
-            v.error(HOJA_PARTIDAS, f.numero(), Columnas.BARCA, "La letra de la barca " + f.barca()
-                    + " no coincide con la clasificación de color " + f.clasificacion().name() + ".");
         if (registrado != null) {
             if (registrado.getClasificacionColor() != f.clasificacion())
                 v.error(HOJA_PARTIDAS, f.numero(), Columnas.CLASIFICACION_COLOR, "El color " + f.codigoColor()
@@ -178,9 +184,9 @@ public class ImportadorPartidas {
             String barcaTexto = f.valor(Columnas.BARCA);
             String barca = null;
             if (!barcaTexto.isEmpty()) {
-                barca = Barca.interpretar(barcaTexto).map(Barca::texto).orElse(null);
-                if (barca == null) v.error(HOJA_PARTIDAS, f.numero(), Columnas.BARCA,
-                        "«" + barcaTexto + "» no tiene el formato capacidad y letra, por ejemplo «400 C».");
+                if (Barca.capacidadDe(barcaTexto).isPresent()) barca = Barca.normalizar(barcaTexto);   // D-51
+                else v.error(HOJA_PARTIDAS, f.numero(), Columnas.BARCA,
+                        "«" + barcaTexto + "» debe empezar con la capacidad en kg, por ejemplo «400 C».");
             } else {
                 v.advertencia(HOJA_PARTIDAS, f.numero(), Columnas.BARCA, "La partida no tiene barca; no se podrá planificar hasta registrarla.");
             }

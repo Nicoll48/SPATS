@@ -64,11 +64,11 @@ public class CargaService {
     }
 
     /**
-     * @param lunes      semana de la proyección (solo para PROYECCION_TEJEDURIA)
-     * @param confirmado el planificador aceptó que la planificación vigente de la semana deje de serlo (D-06)
+     * @param lunes semana de la proyección (solo para PROYECCION_TEJEDURIA). La proyección se registra como una
+     *              versión nueva que no cambia la planificación vigente (D-52).
      */
     @Transactional
-    public CargaResponse importar(TipoDato tipo, MultipartFile archivo, LocalDate lunes, boolean confirmado) {
+    public CargaResponse importar(TipoDato tipo, MultipartFile archivo, LocalDate lunes) {
         String nombre = archivo.getOriginalFilename() == null ? "archivo.xlsx" : archivo.getOriginalFilename();
         ValidacionLibro validacion = new ValidacionLibro(Plantilla.de(tipo), leer(archivo, nombre));
         // Se registra primero para que los datos guarden su carga; si la validación falla, todo se revierte (RF10).
@@ -79,7 +79,7 @@ public class CargaService {
             case PARTIDAS -> importadorPartidas.importar(validacion, carga.getId());
             case PROYECCION_TEJEDURIA -> {
                 if (lunes == null) throw new ReglaNegocioException("SEMANA_REQUERIDA", "Indica la semana de la proyección.");
-                yield importadorProyeccion.importar(validacion, lunes, confirmado, nombre, carga.getId());
+                yield importadorProyeccion.importar(validacion, lunes, nombre, carga.getId());
             }
         };
         if (tipo != TipoDato.PROYECCION_TEJEDURIA)   // la proyección ya se registra como versión nueva

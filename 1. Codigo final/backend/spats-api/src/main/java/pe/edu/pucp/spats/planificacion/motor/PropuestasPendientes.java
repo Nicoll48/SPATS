@@ -35,9 +35,13 @@ public class PropuestasPendientes {
     private final BitacoraService bitacora;
     private final Clock reloj;
 
+    private final pe.edu.pucp.spats.planificacion.repository.RecomendacionTejidoRepository recomendaciones;
+
     public PropuestasPendientes(PlanificacionSemanalRepository planificaciones, PlanificacionPartidaRepository partidas,
                                 PlanificacionMaquinaRepository maquinas, BolsaArticuloRepository bolsas,
-                                PlanificacionIncidenciaRepository incidencias, BitacoraService bitacora, Clock reloj) {
+                                PlanificacionIncidenciaRepository incidencias, BitacoraService bitacora, Clock reloj,
+            pe.edu.pucp.spats.planificacion.repository.RecomendacionTejidoRepository recomendaciones) {
+        this.recomendaciones = recomendaciones;
         this.planificaciones = planificaciones;
         this.partidas = partidas;
         this.maquinas = maquinas;
@@ -100,6 +104,7 @@ public class PropuestasPendientes {
     private void eliminarFilas(PlanificacionSemanal p) {
         Integer id = p.getId();
         incidencias.eliminarDe(id);
+        recomendaciones.eliminarDe(id);
         bolsas.eliminarDe(id);
         maquinas.eliminarDe(id);
         partidas.eliminarDe(id);

@@ -30,7 +30,7 @@ public final class InstanciaSemana {
     public Partida[] partidas;
     public long[] fechaEntrega;         // día de época de la fecha de entrega del pedido
     public int[] tono;                  // rango de tonalidad (1 = Blanco ... 4 = Oscuro)
-    public int[][] compat;              // máquinas de la barca de cada partida
+    public int[][] compat;              // máquinas compatibles con cada partida (capacidad y tonalidad, D-51)
 
     // --- bolsas de tela (una por artículo) ----------------------------------
     public int B;

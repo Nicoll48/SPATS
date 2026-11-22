@@ -69,6 +69,8 @@ class ReplanificacionIntegracionTest {
         try (Connection c = DriverManager.getConnection(url, usuario, contrasena); Statement s = c.createStatement()) {
             s.execute(Files.readString(FlujoPlanificacionIntegracionTest.BD.resolve("BD.sql"), StandardCharsets.UTF_8));
             s.execute(Files.readString(FlujoPlanificacionIntegracionTest.BD.resolve("datos_iniciales.sql"), StandardCharsets.UTF_8));
+            // D-51: datos_iniciales trae el parque oficial; el perfil demo carga el parque del R2.2 solo si no hay máquinas
+            s.execute("DELETE FROM maquina_tonalidad_aceptada; DELETE FROM maquina_tintoreria;");
         }
         registro.add("spring.datasource.url", () -> url);
         registro.add("spring.datasource.username", () -> usuario);
@@ -170,6 +172,16 @@ class ReplanificacionIntegracionTest {
                 + "and campo_modificado = 'fecha_entrega' order by id_bitacora desc limit 1", String.class)).isEqualTo(entregaAnterior.toString());
         assertThat(consulta.versiones(S38)).anyMatch(v -> v.id().equals(r2.idPropuesta()) && v.esVigente());
         assertThat(consulta.estadoSemana(S38).propuestaPendiente()).isNull();
+        // D-57: anular la incidencia de máquina ya considerada y re-planificar desde hoy sin incidencias: la máquina vuelve
+        // a estar disponible desde hoy; el cambio de prioridad (no anulado) se conserva
+        incidencias.anular(S38, idMaquina, "No llegó a fallar");
+        ReplanificacionResponse r3 = replanificacion.replanificar(S38, new ReplanificacionRequest(List.of(), List.of(), true));
+        assertThat(r3.resultado()).isEqualTo(ResultadoReplanificacion.PROPUESTA);
+        List<DiaMaquinaResponse> libres = consulta.detalle(r3.idPropuesta()).maquinas().stream()
+                .filter(m -> m.codigo().equals(maquina.codigo())).findFirst().orElseThrow().dias();
+        assertThat(libres).filteredOn(d -> !d.fecha().isBefore(D)).noneMatch(DiaMaquinaResponse::indisponible);
+        replanificacion.descartar(r3.idPropuesta());
+        assertThat(fechaEntrega(desdeHoy.numeroOp())).isEqualTo(entregaNueva);
     }
 
     private List<Map<String, Object>> filasAntesDeD(Integer idPlanificacion) {

@@ -37,8 +37,9 @@ public class InvalidacionPorPartida {
 
     @EventListener
     public void alCambiarPartida(PartidaPorCambiarEvent evento) {
+        List<PlanificacionSemanal> candidatas = planificaciones.candidatasConPartidaUbicada(evento.idPartida());
         List<PlanificacionSemanal> afectadas = planificaciones.vigentesAbiertasConPartidaUbicada(evento.idPartida());
-        if (afectadas.isEmpty()) return;
+        if (afectadas.isEmpty()) { invalidarCandidatas(candidatas, evento.numeroPartida()); return; }
         if (!evento.confirmado()) {
             PlanificacionSemanal p = afectadas.getFirst();
             throw new ConflictoException("CONFIRMACION_REQUERIDA", "La partida " + evento.numeroPartida()
@@ -52,6 +53,16 @@ public class InvalidacionPorPartida {
             bitacora.registrar(TipoOperacion.INVALIDAR, "planificacion_semanal", vigente.getId(),
                     "Modificación de la partida " + evento.numeroPartida());
             reglasVigencia.marcarSemanaSiguiente(vigente.getSemana().getFechaInicio());
+        }
+        invalidarCandidatas(candidatas, evento.numeroPartida());
+    }
+
+    /** D-52: las candidatas que tienen la partida ubicada tampoco corresponden a los datos; no son la vigente. */
+    private void invalidarCandidatas(List<PlanificacionSemanal> candidatas, String numeroPartida) {
+        for (PlanificacionSemanal c : candidatas) {
+            c.quitarVigencia(EstadoPlanificacion.INVALIDADA);
+            bitacora.registrar(TipoOperacion.INVALIDAR, "planificacion_semanal", c.getId(),
+                    "Modificación de la partida " + numeroPartida + " (planificación no vigente)");
         }
     }
 }

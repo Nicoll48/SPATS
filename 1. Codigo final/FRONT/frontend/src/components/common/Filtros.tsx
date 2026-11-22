@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { Search, X } from 'lucide-react'
 
 export function enRango(fecha: string | null | undefined, desde: string, hasta: string) {
   const dia = (fecha ?? '').slice(0, 10)
@@ -37,7 +38,7 @@ export function useFiltros<T extends Record<string, string>>(inicial: T) {
   }
 }
 
-const claseFiltro = 'rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink'
+const claseFiltro = 'h-10 rounded-lg border border-line bg-panel px-3 text-sm text-ink'
 
 export function FiltroTexto({ etiqueta, valor, placeholder, onChange }: { etiqueta: string; valor: string; placeholder?: string; onChange: (v: string) => void }) {
   return <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">{etiqueta}
@@ -61,10 +62,56 @@ export function FiltroFechas({ etiqueta, desde, hasta, onDesde, onHasta }: { eti
     </div></div>
 }
 
-export function BarraFiltros({ visibles, total, activos, onLimpiar, children }: { visibles: number; total: number; activos: boolean; onLimpiar: () => void; children?: ReactNode }) {
-  return <div className="mb-4 flex flex-wrap items-end gap-3">
-    {children}
-    {activos && <button type="button" onClick={onLimpiar} className="py-1.5 text-sm font-medium text-accent hover:underline">Limpiar filtros</button>}
-    <span className="ml-auto py-1.5 text-xs text-ink-faint">{visibles} de {total}</span>
+/** Filtro aplicado que se muestra como etiqueta removible (Carbon: filter tag). */
+export interface FiltroAplicado { etiqueta: string; texto: string; quitar: () => void }
+
+/** Arma la etiqueta de un filtro de lista si tiene valor; si no, no devuelve nada. */
+export function aplicado(etiqueta: string, valor: string, opciones: { valor: string; texto: string }[], quitar: () => void): FiltroAplicado[] {
+  if (!valor) return []
+  return [{ etiqueta, texto: opciones.find((o) => o.valor === valor)?.texto ?? valor, quitar }]
+}
+
+/** Búsqueda de la barra de herramientas de una tabla (Carbon: search en el toolbar). */
+export function BusquedaTabla({ valor, onChange, placeholder }: { valor: string; onChange: (v: string) => void; placeholder: string }) {
+  return (
+    <label className="flex h-10 min-w-56 flex-1 items-center gap-2 rounded-lg border border-line bg-panel px-3 focus-within:outline focus-within:outline-2 focus-within:outline-accent sm:max-w-sm">
+      <Search className="h-4 w-4 shrink-0 text-ink-soft" aria-hidden="true" />
+      <span className="sr-only">Buscar</span>
+      <input type="search" value={valor} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
+        className="w-full bg-transparent text-sm text-ink placeholder:text-ink-faint focus:outline-none" />
+      {valor && <button type="button" onClick={() => onChange('')} aria-label="Borrar búsqueda" className="text-ink-soft hover:text-ink"><X className="h-4 w-4" aria-hidden="true" /></button>}
+    </label>
+  )
+}
+
+export function BarraFiltros({ visibles, total, activos, onLimpiar, busqueda, aplicados, children }: {
+  visibles: number
+  total: number
+  activos: boolean
+  onLimpiar: () => void
+  /** Búsqueda a la izquierda de los filtros (opcional). */
+  busqueda?: ReactNode
+  /** Filtros aplicados como etiquetas removibles debajo de la barra (opcional). */
+  aplicados?: FiltroAplicado[]
+  children?: ReactNode
+}) {
+  return <div className="mb-4">
+    <div className="flex flex-wrap items-end gap-3">
+      {busqueda}
+      {children}
+      {activos && !aplicados?.length && <button type="button" onClick={onLimpiar} className="h-10 px-2 text-sm font-medium text-accent hover:underline">Limpiar filtros</button>}
+      <span className="ml-auto py-2 text-sm text-ink-soft">{visibles} de {total}</span>
+    </div>
+    {aplicados && aplicados.length > 0 && (
+      <div className="mt-3 flex flex-wrap items-center gap-2" aria-label="Filtros aplicados">
+        {aplicados.map((a) => (
+          <span key={a.etiqueta} className="inline-flex h-7 items-center gap-1 rounded-full bg-accent-soft pr-1 pl-3 text-xs text-ink">
+            <span className="text-ink-soft">{a.etiqueta}:</span><span className="font-medium">{a.texto}</span>
+            <button type="button" onClick={a.quitar} aria-label={`Quitar filtro ${a.etiqueta}`} className="inline-flex h-5 w-5 items-center justify-center rounded-full hover:bg-panel"><X className="h-3 w-3" aria-hidden="true" /></button>
+          </span>
+        ))}
+        <button type="button" onClick={onLimpiar} className="px-2 text-sm font-medium text-accent hover:underline">Limpiar filtros</button>
+      </div>
+    )}
   </div>
 }

@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: pe.edu.pucp.spats.planificacion.recomendacion.CalculoRecomendacionesTest
+-------------------------------------------------------------------------------
+Tests run: 14, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.071 s -- in pe.edu.pucp.spats.planificacion.recomendacion.CalculoRecomendacionesTest

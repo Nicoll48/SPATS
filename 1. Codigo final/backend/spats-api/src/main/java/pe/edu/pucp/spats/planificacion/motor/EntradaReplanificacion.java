@@ -13,7 +13,7 @@ import spats.algoritmo.salida.AsignacionPartida;
  * @param entrada            identificadores para guardar (los de la generación más los artículos de la bolsa vigente)
  * @param dia                día D (fecha del servidor)
  * @param datos              entrada del algoritmo con la re-planificación
- * @param alternativaVigente decisiones de la vigente para evaluarla en el mismo escenario (RF55)
+ * @param alternativaVigente decisiones de la vigente para evaluarla sobre la misma instancia (RF55)
  * @param bolsaVigente       filas de {@code bolsa_articulo} de la vigente
  * @param idsIncidencias     incidencias consideradas
  */

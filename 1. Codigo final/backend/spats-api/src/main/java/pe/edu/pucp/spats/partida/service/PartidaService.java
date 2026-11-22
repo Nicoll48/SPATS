@@ -3,7 +3,6 @@ package pe.edu.pucp.spats.partida.service;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.context.ApplicationEventPublisher;
@@ -17,6 +16,7 @@ import pe.edu.pucp.spats.comun.dominio.Barca;
 import pe.edu.pucp.spats.comun.error.ConflictoException;
 import pe.edu.pucp.spats.comun.error.RecursoNoEncontradoException;
 import pe.edu.pucp.spats.comun.error.ReglaNegocioException;
+import pe.edu.pucp.spats.maquina.service.CompatibilidadMaquinas;
 import pe.edu.pucp.spats.maquina.service.MaquinaService;
 import pe.edu.pucp.spats.partida.dto.PartidaDtos.ColorResponse;
 import pe.edu.pucp.spats.partida.dto.PartidaDtos.ComponenteResponse;
@@ -81,7 +81,7 @@ public class PartidaService {
         Partida partida = buscar(id);
         Color color = colores.findByCodigoColor(s.codigoColor().trim()).orElseThrow(() ->
                 new ReglaNegocioException("COLOR_NO_REGISTRADO", "No existe el color " + s.codigoColor() + "."));
-        String barca = Barca.validada(s.barca(), color.getClasificacionColor(), "el color");
+        String barca = Barca.validadaPorCapacidad(s.barca());   // D-51: debe empezar con la capacidad; la letra no se valida
         partida.exigirPendiente();
         boolean cambia = !color.getId().equals(partida.getColor().getId()) || !Objects.equals(barca, partida.getBarca())
                 || s.pesoTotal().compareTo(partida.getPesoTotal()) != 0;
@@ -90,9 +90,8 @@ public class PartidaService {
         bitacora.registrarCambio("partida", id, "barca", partida.getBarca(), barca);
         bitacora.registrarCambio("partida", id, "peso_total", partida.getPesoTotal(), s.pesoTotal());
         partida.modificar(color, barca, s.pesoTotal());
-        String advertencia = barca != null && !maquinas.barcasRegistradas().contains(barca)
-                ? "La partida " + partida.getNumeroPartida() + " tiene la barca " + barca + " sin máquina registrada."
-                : null;
+        String advertencia = barca != null && !CompatibilidadMaquinas.hayCompatible(maquinas.todas(), barca, color.getTonalidad())
+                ? CompatibilidadMaquinas.avisoSinCompatible(partida.getNumeroPartida(), color.getTonalidad(), barca) : null;
         return new PartidaModificadaResponse(mapper.aResponse(partida, componentes.deLasPartidas(List.of(id))), advertencia);
     }
 
@@ -115,22 +114,13 @@ public class PartidaService {
     }
 
     /**
-     * Modifica un color. Si cambia su clasificación, las partidas pendientes que lo usan deben tener una
-     * barca con la misma letra (D-07); si no, el cambio se rechaza.
+     * Modifica un color. Desde D-51 ni la clasificación ni la tonalidad se validan contra la barca de sus partidas:
+     * la compatibilidad se decide con las máquinas al generar (las partidas sin máquina compatible quedan Bloqueadas).
      */
     @Transactional
     public ColorResponse modificarColor(Integer id, ModificarColorRequest s) {
         Color color = colores.findById(id).orElseThrow(() -> new RecursoNoEncontradoException(
                 "COLOR_NO_ENCONTRADO", "No existe el color indicado."));
-        if (s.clasificacionColor() != color.getClasificacionColor()) {
-            Set<String> enConflicto = partidas.findByEstadoPartidaOrderByNumeroPartida(EstadoPartida.PENDIENTE).stream()
-                    .filter(p -> p.getColor().getId().equals(id) && p.getBarca() != null)
-                    .filter(p -> Barca.interpretar(p.getBarca()).map(b -> b.clasificacion() != s.clasificacionColor()).orElse(false))
-                    .map(Partida::getNumeroPartida).collect(Collectors.toCollection(java.util.TreeSet::new));
-            if (!enConflicto.isEmpty())
-                throw new ReglaNegocioException("BARCA_INCOMPATIBLE", "Las partidas pendientes " + String.join(", ", enConflicto)
-                        + " usan este color con una barca de otra clasificación. Corrige primero su barca.");
-        }
         bitacora.registrarCambio("color", id, "nombre", color.getNombre(), s.nombre().trim());
         bitacora.registrarCambio("color", id, "clasificacion_color", color.getClasificacionColor(), s.clasificacionColor());
         bitacora.registrarCambio("color", id, "tonalidad", color.getTonalidad(), s.tonalidad());
@@ -167,6 +157,16 @@ public class PartidaService {
                     + " lo usan partidas registradas. Elimínalas primero.");
         }
         bitacora.registrar(TipoOperacion.ELIMINAR, "color", id, color.getCodigoColor());
+    }
+
+    /**
+     * Partidas PENDIENTE con barca y sin ninguna máquina de su capacidad que acepte su tonalidad (D-51): al generar
+     * quedarán Bloqueadas mientras siga así.
+     */
+    public List<PartidaResponse> sinMaquinaCompatible() {
+        var parque = maquinas.todas();
+        return listar(EstadoPartida.PENDIENTE).stream()
+                .filter(p -> p.barca() != null && !CompatibilidadMaquinas.hayCompatible(parque, p.barca(), p.tonalidad())).toList();
     }
 
     public Partida buscar(Integer id) {

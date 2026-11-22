@@ -23,6 +23,11 @@ import org.springframework.web.bind.annotation.RestController;
 import pe.edu.pucp.spats.comun.hoja.EscritorLibro;
 import pe.edu.pucp.spats.planificacion.dto.PlanificacionDtos.ArrastradaResponse;
 import pe.edu.pucp.spats.planificacion.dto.PlanificacionDtos.BolsaResponse;
+import pe.edu.pucp.spats.planificacion.dto.PlanificacionDtos.CambioVigenteRequest;
+import pe.edu.pucp.spats.planificacion.dto.PlanificacionDtos.CambioVigenteResponse;
+import pe.edu.pucp.spats.planificacion.dto.PlanificacionDtos.ContextoCambioVigenteResponse;
+import pe.edu.pucp.spats.planificacion.dto.PlanificacionDtos.VersionesSemanaResponse;
+import pe.edu.pucp.spats.planificacion.service.CambioVigenteService;
 import pe.edu.pucp.spats.planificacion.dto.PlanificacionDtos.CierreRequest;
 import pe.edu.pucp.spats.planificacion.dto.PlanificacionDtos.CierreResponse;
 import pe.edu.pucp.spats.planificacion.dto.PlanificacionDtos.ComparacionResponse;
@@ -44,13 +49,20 @@ public class PlanificacionController {
     private final ConsultaPlanificacionService consulta;
     private final CierreSemanaService cierre;
     private final ExportacionPlanificacionService exportacion;
+    private final CambioVigenteService cambioVigente;
+
+    private final pe.edu.pucp.spats.planificacion.recomendacion.RecomendacionesTejidoService recomendacionesTejido;
 
     public PlanificacionController(GeneracionPlanificacionService generacion, ConsultaPlanificacionService consulta,
-                                   CierreSemanaService cierre, ExportacionPlanificacionService exportacion) {
+                                   CierreSemanaService cierre, ExportacionPlanificacionService exportacion,
+                                   CambioVigenteService cambioVigente,
+            pe.edu.pucp.spats.planificacion.recomendacion.RecomendacionesTejidoService recomendacionesTejido) {
+        this.recomendacionesTejido = recomendacionesTejido;
         this.generacion = generacion;
         this.consulta = consulta;
         this.cierre = cierre;
         this.exportacion = exportacion;
+        this.cambioVigente = cambioVigente;
     }
 
     @GetMapping("/semanas/{lunes}/estado")
@@ -68,11 +80,35 @@ public class PlanificacionController {
         return consulta.versiones(lunes);
     }
 
-    /** Genera una versión nueva con el algoritmo. El frontend pide confirmación antes (RF59). */
+    /**
+     * Genera una versión nueva con el algoritmo. El frontend pide confirmación antes (RF59).
+     *
+     * @param proyeccion versión de la proyección que se planifica (D-52); sin ella, la VIGENTE. Si la semana tiene una
+     *                   vigente generada con otra versión, la nueva queda como candidata y la vigente no cambia.
+     */
     @PostMapping("/semanas/{lunes}/planificaciones")
     @ResponseStatus(HttpStatus.CREATED)
-    public GeneracionResponse generar(@PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate lunes) {
-        return generacion.generar(lunes);
+    public GeneracionResponse generar(@PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate lunes,
+                                      @RequestParam(required = false) Integer proyeccion) {
+        return generacion.generar(lunes, proyeccion);
+    }
+
+    /** Versiones de la proyección de la semana con su planificación en uso (panel de versiones, D-52). */
+    @GetMapping("/semanas/{lunes}/versiones-proyeccion")
+    public VersionesSemanaResponse versionesProyeccion(@PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate lunes) {
+        return consulta.versionesProyeccion(lunes);
+    }
+
+    /** Avisos antes de usar una candidata como vigente (D-52). */
+    @GetMapping("/planificaciones/{id}/cambio-vigente")
+    public ContextoCambioVigenteResponse contextoCambioVigente(@PathVariable Integer id) {
+        return cambioVigente.contexto(id);
+    }
+
+    /** «Usar como vigente»: directo si la semana no empezó; si ya empezó, re-planificación propuesta desde hoy (D-52). */
+    @PostMapping("/planificaciones/{id}/cambio-vigente")
+    public CambioVigenteResponse usarComoVigente(@PathVariable Integer id, @RequestBody(required = false) CambioVigenteRequest solicitud) {
+        return cambioVigente.usar(id, solicitud == null ? List.of() : solicitud.partidasEnMaquina());
     }
 
     @GetMapping("/planificaciones/{id}")
@@ -93,6 +129,22 @@ public class PlanificacionController {
     @GetMapping("/planificaciones/{id}/exportacion")
     public ResponseEntity<byte[]> exportar(@PathVariable Integer id) {
         ExportacionPlanificacionService.Archivo archivo = exportacion.exportar(id);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(archivo.nombre()).build().toString())
+                .contentType(MediaType.parseMediaType(EscritorLibro.TIPO_XLSX))
+                .body(archivo.contenido());
+    }
+
+    /** RF30 (D-56): tejido adicional recomendado para la misma semana de una versión. */
+    @GetMapping("/planificaciones/{id}/recomendaciones")
+    public pe.edu.pucp.spats.planificacion.recomendacion.RecomendacionesTejidoService.RecomendacionesResponse recomendaciones(@PathVariable Integer id) {
+        return recomendacionesTejido.consultar(id);
+    }
+
+    /** RF30 (D-56): Excel para tejeduría, siempre de la vigente de la semana, ordenado por día de tejido. */
+    @GetMapping("/semanas/{lunes}/recomendaciones/exportacion")
+    public ResponseEntity<byte[]> exportarRecomendaciones(@PathVariable @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate lunes) {
+        var archivo = recomendacionesTejido.exportar(lunes);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(archivo.nombre()).build().toString())
                 .contentType(MediaType.parseMediaType(EscritorLibro.TIPO_XLSX))

@@ -4,7 +4,7 @@
 >
 > **Cómo usarlo.** El código **no se crea desde este documento**. El proyecto que acompaña a este archivo ya contiene el código (backend, frontend y el módulo del algoritmo). Este documento sirve para **entender** lo que ese código debe hacer y por qué. Ante una diferencia entre el código y este documento, **pregunta antes de cambiar nada**.
 >
-> Versión: 25 de octubre de 2026, actualizada el 2 de noviembre de 2026 con las decisiones confirmadas D-05 a D-37 (detalle en `CONTROL_DE_VERSIONES/DECISIONES.md`). Fuentes: R3.1 Catálogo de requisitos, R3.2 Especificación de requisitos, R3.3 Modelo de base de datos (con los cambios de esta fecha), R3.6 Arquitectura C4, R2.2/R2.3 (algoritmo) y decisiones confirmadas por la autora.
+> Versión: 25 de octubre de 2026, actualizada el 2 de noviembre de 2026 con las decisiones confirmadas D-05 a D-37 (detalle en `CONTROL_DE_VERSIONES/DECISIONES.md`). Fuentes: R3.1 Catálogo de requisitos, R3.2 Especificación de requisitos, R3.3 Modelo de base de datos (con los cambios de esta fecha), R3.6 Arquitectura C4, R2.2/R2.3 (algoritmo) y decisiones confirmadas por la autora. Actualizada el 11 de noviembre de 2026 con D-52 (versiones de la proyección de una semana, sección 9.8).
 
 ---
 
@@ -27,7 +27,7 @@
 
 El jefe de planeamiento (único usuario operativo) asigna cada semana las **partidas** a las **máquinas de tintorería**. Hoy lo hace a mano en Excel y no puede comprobar que todas las máquinas queden equilibradas día por día.
 
-SPATS recibe la **proyección de tejeduría** (qué kilos de cada artículo se tejerán cada día), decide **qué partidas se conforman** con esa tela y **a qué máquina de su barca va cada una**, y construye un **calendario de 7 días por máquina** que deja las máquinas lo más equilibradas posible. Para eso usa un algoritmo de **colonia de hormigas (ACO)**.
+SPATS recibe la **proyección de tejeduría** (qué kilos de cada artículo se tejerán cada día), decide **qué partidas se conforman** con esa tela y **a qué máquina compatible va cada una** (misma capacidad y que acepte su tonalidad), y construye un **calendario de 7 días por máquina** que deja las máquinas lo más equilibradas posible. Para eso usa un algoritmo de **colonia de hormigas (ACO)**.
 
 El calendario es una **cola de partidas candidatas por máquina y por día**. No asigna horas de inicio ni de fin, y el jefe de planeamiento conserva la decisión sobre la ejecución real.
 
@@ -37,13 +37,14 @@ El calendario es una **cola de partidas candidatas por máquina y por día**. No
 - Carga de pedidos, artículos, partidas y proyección de tejeduría desde hojas de cálculo. La carga es acumulable: el planificador sube cada cierto tiempo lo que corresponde al mes.
 - Configuración de máquinas e indisponibilidades.
 - Generación de la planificación semanal con el ACO.
-- Calendario, clasificación de partidas (Asignada, Sobrante, Bloqueada), indicadores de lavado, desviaciones y recomendaciones. Las recomendaciones de tejeduría (RF30) tienen la regla aprobada y se implementan en un incremento posterior (sección 13).
+- Calendario, clasificación de partidas (Asignada, Sobrante, Bloqueada), indicadores de lavado, desviaciones y recomendaciones. Las recomendaciones de tejeduría (RF30) están implementadas como tejido adicional para la misma semana (D-56, sección 13).
 - Cierre de semana, partidas arrastradas e incidencias con re-planificación. La re-planificación desde el día actual, con propuesta, confirmación y descarte, **está implementada** (sección 9.5).
 - Historial de versiones y trazabilidad.
+- Versiones de la proyección de una semana (D-52): cada proyección subida es una versión (V1, V2…) que se planifica aparte; el planificador compara hasta dos en el calendario y decide cuál usar como vigente (sección 9.8).
 
 ### 2.2 Fuera del alcance (no construir)
 
-- **Escenarios** (simulaciones aisladas) y **Reportes** para laboratorio o programación. Quedaron fuera; no tienen tablas ni componentes en el C4.
+- **Reportes** para laboratorio o programación. Quedaron fuera; no tienen tablas ni componentes en el C4.
 - **Edición manual del calendario.** No hay arrastrar y soltar ni mover partidas a mano. El calendario solo cambia al generar o re-planificar.
 - **Receta.** Su estado nunca filtra ni bloquea la planificación.
 - **Conexión automática con otros sistemas.** Toda la información entra por carga manual de archivos o por registro en pantalla.
@@ -59,7 +60,8 @@ El calendario es una **cola de partidas candidatas por máquina y por día**. No
 | Partida | Unidad de trabajo que se tiñe de una sola vez en una máquina. Pertenece a un pedido, tiene un color, un peso y una barca, y requiere tela de uno o más artículos (componentes). |
 | Componente | Tela que la partida necesita de un artículo: **tela principal** o **complemento** (rib, cuello, puño…). Cada uno con su peso requerido. |
 | Artículo | Tipo de tela que se teje. |
-| Barca | Texto como `400 C` o `500 B`: capacidad de la máquina (kg) y tipo de color (**C** color, **B** blanco). Una partida puede ir a **cualquier máquina con su misma barca**. |
+| Barca | Texto como `400 C` o `500 B`. El **número** es la capacidad (kg) y es lo que usa la compatibilidad; la **letra** (**C** color, **B** blanco) es solo informativa (D-51). Una partida puede ir a cualquier máquina de esa capacidad que acepte su tonalidad. |
+| Tonalidades aceptadas | Tonalidades que el jefe de planeamiento marca para cada máquina (`maquina_tonalidad_aceptada`); por defecto, las cuatro. Una máquina solo recibe partidas de las tonalidades que acepta (D-51). |
 | Clasificación de color | El tipo C o B. Decide a qué máquinas puede ir la partida (`color.clasificacion_color`, `maquina_tintoreria.clasificacion_color`). |
 | Tonalidad | Tono del color: `BLANCO < CLARO < MEDIO < OSCURO`. Sirve para detectar lavados **dentro de una misma máquina** (`color.tonalidad`). |
 | Lavado | Hace falta cuando, en una misma máquina, una partida va después de otra de tonalidad más oscura. |
@@ -127,7 +129,7 @@ Hay **tres campos distintos**; no los mezcles.
 |---|---|---|
 | `ASIGNADA` | Se conformó y quedó dentro del objetivo semanal de su máquina. | Con máquina y día. |
 | `SOBRANTE` | Se conformó, pero excede el objetivo semanal de su máquina o ya no hay espacio en los días que le quedan. **Igual aparece en el calendario**, en su primer día disponible, marcada como Sobrante. | Con máquina y día. |
-| `BLOQUEADA` | La bolsa de al menos uno de sus artículos tuvo kilos en la semana, pero no alcanzaron para completar toda la partida (principal o complemento). **No consume tela**: la bolsa no se le reserva. | **Sin** máquina y sin día. |
+| `BLOQUEADA` | La bolsa de al menos uno de sus artículos tuvo kilos en la semana, pero no alcanzaron para completar toda la partida (principal o complemento); o ninguna máquina de su capacidad acepta su tonalidad (D-51). **No consume tela**: la bolsa no se le reserva. El motivo se guarda en `motivo_bloqueo`. | **Sin** máquina y sin día. |
 
 - Una partida `PENDIENTE` cuyos artículos no tuvieron **ningún kilo** en la semana **no se registra** en la planificación: simplemente sigue `PENDIENTE`.
 - La regla de "al menos uno de sus artículos" sale de la HU-09 C5: si la tela principal alcanza y el complemento no, la partida es Bloqueada.
@@ -165,8 +167,9 @@ stateDiagram-v2
 | `ABIERTA` | Versión vigente de una semana en curso. | Sí |
 | `CERRADA` | Versión vigente de una semana ya cerrada (RF42). | Sí |
 | `REEMPLAZADA` | Dejó de ser vigente porque se generó otra versión de la semana (D-14) o se confirmó una re-planificación. Se conserva en el historial. | No |
-| `INVALIDADA` | Dejó de ser vigente porque cambió la proyección de la semana (D-06) o se modificó una partida Asignada o Sobrante de esa versión (D-24). Se conserva en el historial. | No |
+| `INVALIDADA` | Dejó de corresponder a los datos: se corrigió un registro de su versión de la proyección (D-06) o se modificó una partida Asignada o Sobrante de esa versión (D-24). Se conserva en el historial. | No |
 | `PROPUESTA` | Re-planificación pendiente de confirmar (D-13b). No cuenta como versión del historial; si se descarta, se elimina (D-26). | No |
+| `CANDIDATA` | Generada con una versión de la proyección distinta de la de la vigente (D-52). El planificador decide si la usa como vigente. Cada versión de la proyección tiene a lo más una. Al cerrar la semana queda en solo lectura. | No |
 
 ---
 
@@ -182,9 +185,14 @@ stateDiagram-v2
 
 **Máquinas**
 
-- **RN-06 — Compatibilidad por barca.** Una partida solo va a una máquina con su misma barca. La barca ya incluye la capacidad y la clasificación de color (HU-11 C8 y C9).
+- **RN-06 — Compatibilidad por capacidad y tonalidad.** Una partida puede ir a una máquina de su misma capacidad que acepte su tonalidad (D-51, que reemplaza a D-49 y D-50):
+  - **Capacidad:** el número de la barca de la partida (de `600 C` o `600 B` se toma 600) es igual a `maquina_tintoreria.capacidad`. La letra de la barca no se usa: se conserva como dato informativo en máquinas y partidas.
+  - **Tonalidad:** la tonalidad de la partida está entre las tonalidades aceptadas por la máquina (`maquina_tonalidad_aceptada`).
+  - Si ninguna máquina cumple ambas condiciones, la partida no se envía a la búsqueda y queda **Bloqueada** con el motivo «Ninguna máquina de su capacidad acepta su tonalidad».
+  - La barca de la partida debe empezar con un número; si no, la importación la rechaza.
+  - Al importar o modificar una partida sin máquina compatible, se acepta con un aviso, porque la configuración de las máquinas puede cambiar.
 - **RN-07 — Objetivo semanal.** Configurable por máquina (16 de referencia). Por cada día indisponible de la máquina en la semana, el objetivo baja 2 partidas (con un día indisponible, 16 → 14).
-- **RN-08 — Reparto diario en partidas completas.** En los días hábiles de la máquina: mínimo diario = ⌊objetivo / días hábiles⌋ y máximo diario = ⌈objetivo / días hábiles⌉. Con 16 en 7 días quedan 2 y 3; con 14 en 6 días, 2 y 3. Nunca fracciones.
+- **RN-08 — Reparto diario en partidas completas.** En los días hábiles de la máquina: mínimo diario = ⌊objetivo / días hábiles⌋ y máximo diario = ⌈objetivo / días hábiles⌉. Con 16 en 7 días quedan 2 y 3; con 14 en 6 días, 2 y 3. Nunca fracciones. El mínimo y el máximo se usan para medir el desbalance diario (E_D) y el máximo es el tope de cada día; cómo se reparte la meta entre los días lo fija RN-13 (D-48).
 - **RN-09 — Equilibrio semanal y diario son distintos.** Una máquina que llega a su objetivo pero concentra la carga en pocos días es un mal resultado. La función objetivo castiga los dos.
 - **RN-10 — Si la tela no alcanza, igual se equilibra.** Si la proyección no cubre el objetivo de todas las máquinas, deben quedar equilibradas entre sí. El algoritmo siempre devuelve una asignación factible (RF28).
 - **RN-11 — Indisponibilidad.** Una máquina no recibe partidas regulares en sus días indisponibles.
@@ -192,7 +200,14 @@ stateDiagram-v2
 **Calendario**
 
 - **RN-12 — Disponibilidad temporal.** Una partida no se ubica antes de su `fecha_disponible`, el día en que su tela completa queda disponible en tintorería (sección 5).
-- **RN-13 — Llenado día a día.** Las partidas de cada máquina se ordenan por fecha de entrega, día disponible y orden de llegada. Cada día hábil recibe el máximo diario mientras haga falta para llegar al objetivo, y el mínimo en los demás (con 16: 3, 3, 2, 2, 2, 2, 2). Lo que no entra un día pasa al siguiente.
+- **RN-13 — Llenado día a día, proporcional y escalonado (D-48).** Las partidas de cada máquina se ordenan por fecha de entrega, día disponible y orden de llegada.
+  - **Meta:** `min(objetivo, partidas conformadas de la máquina)`.
+  - **Avance esperado:** al cerrar el día hábil j de H, la máquina debería llevar `⌊meta · j / H + desfase⌋` partidas; el último día hábil, la meta completa.
+  - **Desfase:** `((m + semana ISO) mod M + 0.5) / M`, con m la posición de la máquina y M el número de máquinas. Reparte entre las máquinas los días que reciben una partida de más y los rota cada semana, para que la planta tenga una carga diaria pareja.
+  - **Cuota del día:** el avance esperado menos lo ya ubicado, sin superar el máximo diario. Con 16 en 7 días y desfase 0.5: 2, 3, 2, 2, 2, 3, 2; con 10 partidas: 1, 2, 1, 2, 1, 2, 1.
+  - **Faltantes y adelantos:** si un día no hay suficientes partidas disponibles, el faltante se recupera en los días siguientes con la misma fórmula; si la máquina va adelantada, espera.
+  - **Re-planificación:** se aplica desde el día D, con H y j contados desde D. La meta descuenta las fijas Asignadas antes de D, y las fijas del día D ocupan lugar en ese día.
+  - **Antes de D-48** se usaba el máximo diario mientras hiciera falta y luego el mínimo (3, 3, 2, 2, 2, 2, 2). Eso concentraba la carga de la planta al inicio de la semana.
 - **RN-14 — Sobrantes en el calendario.** Las partidas que exceden el objetivo, o que llegan cuando los días restantes ya están llenos, se muestran en su **primer día disponible** como Sobrante.
 - **RN-15 — Orden dentro del día.** En cada máquina y día van primero las regulares y luego las Sobrantes, cada grupo en orden de llegada. Ese orden se guarda en `orden_secuencia` y es el que se usa para detectar lavados.
 - **RN-16 — Lavado.** Se marca `requiere_lavado_previo` cuando la partida anterior en la misma máquina tiene una tonalidad más oscura. La comparación sigue la secuencia completa de la máquina durante la semana.
@@ -219,7 +234,8 @@ stateDiagram-v2
 
 **Vigencia y encadenamiento de semanas** (decisiones confirmadas)
 
-- **D-06 — Cambio de proyección.** Cambiar la proyección de una semana con planificación vigente abierta exige confirmación. La vigente pasa a `INVALIDADA`, se conserva en el historial y el calendario queda en blanco hasta volver a generar. Se puede volver a una versión anterior de la proyección.
+- **D-06 — Corrección de la proyección (acotada por D-52).** Subir otra proyección ya **no** invalida la vigente: crea otra versión (D-52). Solo corregir o eliminar un registro de la versión vigente de la proyección exige confirmación y deja `INVALIDADA` la planificación generada con ella (y su candidata); el calendario queda en blanco hasta volver a generar. Se puede volver a una versión eliminada de la proyección.
+- **D-52 — Versiones de la proyección.** Una semana puede tener varias proyecciones subidas (V1, V2…). Subir una no borra la anterior ni cambia la vigente. Cada versión se planifica con el mismo algoritmo y parámetros; si la semana ya tiene vigente de otra versión, la nueva queda `CANDIDATA`. «Usar como vigente» la vuelve vigente (directo si la semana no empezó; con la re-planificación desde hoy si ya empezó). Detalle en la sección 9.8.
 - **D-14 y D-15 — Volver a generar.** Volver a generar una semana crea una versión nueva, que pasa a vigente; la anterior queda `REEMPLAZADA`. La primera semana, sin versión vigente anterior, empieza con stock 0.
 - **D-16 — Planificar sin cerrar la anterior.** Se puede planificar N+1 sin haber cerrado N. Las partidas Asignadas o Sobrantes de la vigente abierta de N no se envían al planificar N+1, porque su tela ya se consumió.
 - **D-19 — Marca de N+1.** Cualquier cambio en la vigente de N (otra versión, invalidación por la proyección o por una partida, o re-planificación confirmada) deja la vigente abierta de N+1 con `stock_desactualizado = TRUE`. La marca se guarda en la base y la pantalla sugiere volver a generarla. Cerrar N **no** la activa, porque cerrar no cambia la vigente.
@@ -248,7 +264,7 @@ stateDiagram-v2
 El algoritmo toma **dos decisiones a la vez**, evaluadas sobre la semana completa:
 
 1. **Qué partida conformar** cuando la tela permite completar varias con la misma fecha de entrega.
-2. **A qué máquina de su barca va** cada partida conformada.
+2. **A qué máquina compatible va** cada partida conformada (RN-06).
 
 El día **no lo decide el algoritmo**: lo fija una regla común de llenado del calendario (RN-13 y RN-14).
 
@@ -260,10 +276,11 @@ El día **no lo decide el algoritmo**: lo fija una regla común de llenado del c
 - **Máquinas:** días hábiles (los días indisponibles se quitan), objetivo efectivo (RN-07) y mínimo y máximo diario (RN-08).
 - **Bolsas:** una por artículo. Parten con el stock inicial y reciben cada día lo que queda disponible según `RegistroProyeccion.fechaDisponible()` (regla de la sección 5).
 - **Partidas:** se toman las `PENDIENTE`, ordenadas por orden de registro. Quedan fuera:
-  - las que no tienen ninguna máquina de su barca (motivo `SIN_MAQUINA`);
+  - las que no tienen ninguna máquina compatible (motivo `SIN_MAQUINA_COMPATIBLE`, «Ninguna máquina de su capacidad acepta su tonalidad», D-51). Quedan Bloqueadas;
   - las que tienen algún componente que no cabe en la tela total de la semana, es decir, stock inicial más llegadas (motivo `SIN_TELA`).
 
   El resto son candidatas.
+- **Compatibilidad** (`compat[p]`, clase `nucleo.Compatibilidad`, D-51): las máquinas cuya capacidad es igual al número de la barca de la partida y cuyas `tonalidadesAceptadas` contienen su tonalidad. Antes se comparaba el texto completo de la barca. `Maquina` recibe `tonalidadesAceptadas` (`Set<Tonalidad>`), que el backend llena desde `maquina_tonalidad_aceptada`; el adaptador de Excel lee la columna opcional `tonalidades_aceptadas` de la hoja Maquinas (lista separada por comas) y, si no está, la máquina acepta las cuatro. No cambian la búsqueda del ACO, el calendario, la función objetivo, el validador ni los parámetros: PI-03 y PI-04 dan la misma F.
 
 **2. Simular la semana día a día** (`nucleo.SimuladorConformacion`). Cada hormiga construye una semana completa:
 
@@ -276,7 +293,7 @@ para cada día d = lunes..domingo:
         C ← solo las de fecha de entrega más próxima
         p ← si |C| = 1, esa; si no, la elige la hormiga
         descontar de las bolsas toda la tela de p
-        m ← si su barca tiene una sola máquina, esa; si no, la elige la hormiga
+        m ← si tiene una sola máquina compatible, esa; si no, la elige la hormiga
         registrar diaConformacion[p] = d, orden[p] = k, maquina[p] = m
 stockFinal ← saldo de cada bolsa
 ```
@@ -285,7 +302,7 @@ stockFinal ← saldo de cada bolsa
 
 - **Orden:** fecha de entrega, día de conformación y orden de llegada.
 - **Día disponible:** el primer día hábil desde `diaConformacion`.
-- **Cuota diaria:** el máximo diario si `restante − máximo ≥ mínimo × días hábiles que quedan`; si no, el mínimo.
+- **Cuota diaria (D-48):** `meta = min(objetivo, partidas conformadas)`. El día hábil j de H tiene `cuota = min(máximo, ⌊meta·j/H + desfase⌋ − ubicadas)`, con la meta completa el último día y `desfase = ((m + semana ISO) mod M + 0.5) / M` (RN-13).
 - **Llenado:** cada día se ubican hasta la cuota las partidas ya disponibles; las que no entran pasan al día siguiente.
 - **Al final:** las que quedan sin ubicar son Sobrantes y van a su primer día disponible.
 
@@ -305,7 +322,7 @@ E_D = Σ_m Σ_días hábiles [ max(0, mínimo − regulares del día)² + max(0,
 
 - **Nodo:** cada par partida–máquina, con feromona inicial τ0 = 0.5.
 - **Atractivo de un nodo:** `τ[p][m]^a · η[m]^b`, con `η[m] = objetivo[m] / (carga[m] + 1)`. Favorece las máquinas menos cargadas.
-- **Elegir la partida:** por ruleta, con peso igual a la suma del atractivo sobre las máquinas de su barca.
+- **Elegir la partida:** por ruleta, con peso igual a la suma del atractivo sobre sus máquinas compatibles.
 - **Elegir la máquina:** por ruleta, con peso igual al atractivo de cada máquina.
 - **Al final de cada iteración:** se evapora la feromona (`τ ← ρ·τ`) y la mejor hormiga de la iteración deposita `(1 − ρ) / (1 + F)` en los nodos que usó.
 - **Parada:** al agotar las evaluaciones o el tiempo máximo. Se devuelve la mejor semana encontrada.
@@ -349,7 +366,7 @@ El módulo es Java puro, sin dependencias externas (JUnit solo para pruebas). De
 |---|---|
 | `spats.algoritmo` | `PlanificadorSemanal`: punto de entrada, `planificar(DatosSemana, ParametrosACO) → ResultadoPlanificacion`; `evaluar(DatosSemana, List<AsignacionPartida>) → Indicadores` calcula la F de unas decisiones dadas (RF55). La regla voraz `ReglaReferencia` está en `src/test` y solo sirve para pruebas. |
 | `spats.algoritmo.entrada` | Contrato de entrada: `DatosSemana`, `ParametrosPlanificacion`, `Maquina`, `Indisponibilidad`, `Pedido`, `Partida`, `Componente`, `RegistroProyeccion`, `StockArticulo`, `Tonalidad`, `EstadoPartida`. Para la re-planificación: `Replanificacion` (día D, `AsignacionFija`, `ConformacionConservada`, `DisponibilidadPartida`), componente opcional de `DatosSemana`. |
-| `spats.algoritmo.nucleo` | Modelo común: `ConstructorInstancia`, `InstanciaSemana`, `SimuladorConformacion`, `EstrategiaDecision`, `ConstructorCalendario`, `Calendario`, `FuncionObjetivo`, `Evaluacion`, `Solucion`, `Validador`, `PartidaExcluida` (motivos `SIN_MAQUINA`, `SIN_TELA` y, en la re-planificación, `SIN_DIA_DISPONIBLE` y `TELA_DEVUELTA`). |
+| `spats.algoritmo.nucleo` | Modelo común: `ConstructorInstancia`, `InstanciaSemana`, `SimuladorConformacion`, `EstrategiaDecision`, `ConstructorCalendario`, `Calendario`, `FuncionObjetivo`, `Evaluacion`, `Solucion`, `Validador`, `Compatibilidad` (capacidad y tonalidad, D-51), `PartidaExcluida` (motivos `SIN_MAQUINA_COMPATIBLE`, `SIN_TELA` y, en la re-planificación, `SIN_DIA_DISPONIBLE` y `TELA_DEVUELTA`). |
 | `spats.algoritmo.aco` | `ColoniaHormigas` (con `Hormiga`), `ParametrosACO`, `ResultadoBusqueda`. |
 | `spats.algoritmo.salida` | Contrato de salida: `ResultadoPlanificacion`, `AsignacionPartida`, `EstadoAsignacion` (`ASIGNADA`, `SOBRANTE`), `ResumenMaquina`, `PartidaBloqueada` (partida no conformada y su motivo; incluye `TELA_PRIORIZADA`), `Indicadores`, `EstadoSiguiente`. |
 | `spats.algoritmo.excel` | Adaptador de **prueba** que lee y escribe Excel. En el sistema, los datos vienen de la base y este paquete no se usa. |
@@ -364,7 +381,7 @@ La **prueba de regresión** consiste en que, con los Excel generados en R y la m
 
 El componente **Planificación semanal** del backend coordina: lee de la base, arma `DatosSemana`, llama a `PlanificadorSemanal.planificar`, y guarda el resultado completo en **una transacción**. El algoritmo no conoce la base.
 
-### 9.1 Tablas (PostgreSQL, base `tintoreria`, 22 tablas)
+### 9.1 Tablas (PostgreSQL, base `tintoreria`, 23 tablas)
 
 | Grupo | Tablas |
 |---|---|
@@ -372,7 +389,7 @@ El componente **Planificación semanal** del backend coordina: lee de la base, a
 | Demanda | `cliente`, `pedido`, `articulo`, `detalle_pedido`, `color` |
 | Partidas | `partida`, `partida_componente` |
 | Abastecimiento | `semana`, `proyeccion_tejeduria`, `detalle_proyeccion_tejeduria` |
-| Máquinas | `maquina_tintoreria`, `indisponibilidad_maquina` |
+| Máquinas | `maquina_tintoreria`, `maquina_tonalidad_aceptada`, `indisponibilidad_maquina` |
 | Resultado | `planificacion_semanal`, `planificacion_partida`, `planificacion_maquina`, `bolsa_articulo` |
 | Incidencias | `incidencia`, `planificacion_incidencia` |
 
@@ -393,10 +410,12 @@ El componente **Planificación semanal** del backend coordina: lee de la base, a
 | `indisponibilidad_maquina.tipo_indisponibilidad` | `INDISPONIBLE`, `MANTENIMIENTO` (D-21) |
 | `usuario.estado` | `ACTIVO`, `INACTIVO` (D-20) |
 | `pedido.estado` | `PENDIENTE`, `COMPLETADO` (D-20) |
-| `planificacion_semanal.estado` | `ABIERTA`, `CERRADA`, `REEMPLAZADA`, `INVALIDADA`, `PROPUESTA` (D-20, sección 6.4) |
-| `proyeccion_tejeduria.estado` | `VIGENTE`, `REEMPLAZADA` (D-20) |
+| `planificacion_semanal.estado` | `ABIERTA`, `CERRADA`, `REEMPLAZADA`, `INVALIDADA`, `PROPUESTA`, `CANDIDATA` (D-20, D-52, sección 6.4) |
+| `proyeccion_tejeduria.estado` | `VIGENTE` (la de la planificación vigente; sin vigente, la última cargada), `CARGADA` (cualquier otra, que se puede planificar), `ELIMINADA` (D-46). `CARGADA` reemplaza a `REEMPLAZADA` (D-52) |
+| `bitacora_auditoria.tipo_operacion` | suma `CAMBIAR_VIGENTE` (D-52) |
 | `maquina_tintoreria.estado` | `OPERATIVA`, `INDISPONIBLE`, `EN_MANTENIMIENTO` (D-20) |
-| `incidencia.estado` | `PENDIENTE`, `CONSIDERADA` (D-20) |
+| `maquina_tonalidad_aceptada.tonalidad` | `BLANCO`, `CLARO`, `MEDIO`, `OSCURO` (mismo dominio que `color.tonalidad`, D-51) |
+| `incidencia.estado` | `PENDIENTE`, `CONSIDERADA`, `ATENDIDA`, `ANULADA` (D-20, D-54, D-57) |
 | `bitacora_auditoria.tipo_operacion` | `INICIAR_SESION`, `IMPORTAR`, `CREAR`, `MODIFICAR`, `GENERAR`, `INVALIDAR`, `CERRAR`, `COMPLETAR`, `REGISTRAR`, `RESTAURAR`, `PROPONER`, `CONFIRMAR`, `DESCARTAR` (D-20, D-37) |
 
 **Columnas agregadas al modelo del R3.3:**
@@ -406,6 +425,8 @@ El componente **Planificación semanal** del backend coordina: lee de la base, a
 - `indisponibilidad_maquina.tipo_indisponibilidad` (D-21): estado que se muestra mientras el intervalo está vigente.
 - `bolsa_articulo.kg_devueltos` (D-30): tela que vuelve a la bolsa el día D en una re-planificación.
 - `planificacion_semanal.stock_desactualizado` (D-19).
+- `maquina_tonalidad_aceptada (id_maquina, tonalidad)`, con clave primaria compuesta (D-51): tonalidades que acepta cada máquina; el backend exige al menos una. Reemplaza la columna `maquina_tintoreria.tonalidad_maxima` de D-50, que se elimina. Migración: `BD/migracion_2026-11-10_tonalidades_aceptadas.sql` (a las máquinas existentes se les registran las cuatro).
+- `planificacion_partida.motivo_bloqueo VARCHAR(120)` (D-51): motivo de una `BLOQUEADA`.
 
 **Restricciones que el backend no debe romper:**
 
@@ -425,12 +446,12 @@ Con Spring Boot usa `spring.jpa.hibernate.ddl-auto=validate`: la base se crea co
 | Objeto del algoritmo | Se arma con |
 |---|---|
 | `ParametrosPlanificacion(fechaInicioSemana)` | `semana.fecha_inicio`. Los pesos se quedan con sus valores del código. |
-| `Maquina(codigo, capacidad, tipo, barca, objetivoSemanal)` | `maquina_tintoreria`: `codigo`, `capacidad`, `clasificacion_color`, `barca`, `objetivo_semanal`. |
+| `Maquina(codigo, capacidad, tipo, barca, objetivoSemanal, tonalidadesAceptadas)` | `maquina_tintoreria`: `codigo`, `capacidad`, `clasificacion_color`, `barca`, `objetivo_semanal`; y `maquina_tonalidad_aceptada` (D-51). |
 | `Indisponibilidad(maquina, fecha, motivo)` | Un registro por cada día de la semana cubierto por `indisponibilidad_maquina`. En la re-planificación, también por cada día cubierto por las `INCIDENCIA_MAQUINA` consideradas. |
 | `Pedido(codigo, cliente, fechaPedido, fechaEntrega)` | `pedido.numero_op`, `cliente.nombre`, `null` y `pedido.fecha_entrega`. La fecha de pedido no está en la base y el código no la usa. En la re-planificación, la fecha de entrega de un pedido con `CAMBIO_PRIORIDAD` es la `nueva_fecha_entrega`. |
 | `Partida(codigo, pedido, codColor, color, peso, tonalidad, barca, ordenRegistro, estado)` | `partida.numero_partida`, `pedido.numero_op`, `color.codigo_color`, `color.nombre`, `partida.peso_total`, `Tonalidad.valueOf(color.tonalidad)`, `partida.barca`, el orden por `fecha_registro` e `id_partida`, y `PENDIENTE`. **Solo las candidatas** (ver abajo). |
 | `Componente(partida, codArticulo, articulo, claveArticulo, rol, kgRequeridos)` | `partida_componente` → `detalle_pedido` → `articulo`. `claveArticulo = articulo.codigo`, guardado sin prefijo numérico (D-25); el rol sale de `tipo_componente` y los kilos, de `peso_requerido`. |
-| `RegistroProyeccion(maquinaTejeduria, pedido, articulo, claveArticulo, fechaTejido, kg)` | `detalle_proyeccion_tejeduria` → `detalle_pedido` → `pedido` y `articulo`, de la **versión vigente** de la proyección de la semana (D-06), con `fechaTejido = fecha_proyectada` y `kg = kg_proyectados`. Se filtra del sábado anterior al viernes de la semana. `maquinaTejeduria` no está en la base: se envía vacía. |
+| `RegistroProyeccion(maquinaTejeduria, pedido, articulo, claveArticulo, fechaTejido, kg)` | `detalle_proyeccion_tejeduria` → `detalle_pedido` → `pedido` y `articulo`, de la **versión de la proyección que se planifica**: la `VIGENTE` por omisión, o la que el planificador elige en el panel de versiones (D-52); en una re-planificación, la de la vigente o la que pasará a serlo, con `fechaTejido = fecha_proyectada` y `kg = kg_proyectados`. Se filtra del sábado anterior al viernes de la semana. `maquinaTejeduria` no está en la base: se envía vacía. |
 | `StockArticulo(claveArticulo, articulo, kg)` | `bolsa_articulo.kg_saldo_final` del **domingo de la semana anterior** en su versión **vigente**, solo los artículos con saldo > 0. En la re-planificación, el stock del día D es `bolsa_articulo.kg_saldo_inicial` de D en la vigente. |
 
 **Partidas candidatas que se envían:**
@@ -449,7 +470,7 @@ Con Spring Boot usa `spring.jpa.hibernate.ddl-auto=validate`: la base se crea co
 - `id_proyeccion`;
 - los indicadores `valor_funcion_objetivo`, `desbalance_semanal`, `desbalance_diario`, `numero_lavados`, `evaluaciones` y `tiempo_ejecucion_ms`.
 
-La nueva versión pasa a vigente y la anterior deja de serlo, en la misma transacción. Si la semana siguiente tiene vigente abierta, queda con `stock_desactualizado = TRUE` (D-19).
+Si la semana no tiene vigente, o se generó con la versión de la proyección de la vigente, la nueva pasa a vigente y la anterior deja de serlo, en la misma transacción; si la semana siguiente tiene vigente abierta, queda con `stock_desactualizado = TRUE` (D-19). Si se generó con otra versión de la proyección, queda `CANDIDATA`, la vigente no cambia y no se marca la semana siguiente (D-52).
 
 **`planificacion_partida`.** Una fila por cada `AsignacionPartida`:
 
@@ -466,7 +487,8 @@ Además, una fila `BLOQUEADA` (sin máquina ni día) por cada partida que cumpla
 
 - **Cuentan:** las no conformadas por la prioridad de otras (`TELA_PRIORIZADA`) y las `SIN_TELA` en las que al menos uno de sus artículos tuvo kilos en la semana.
 - **No se registran:** las `SIN_TELA` sin ningún kilo en todos sus artículos.
-- **No se registran:** las `SIN_MAQUINA`. El sistema avisa al cargar la partida («la partida X tiene una barca sin máquina registrada») y al planificar (D-12).
+- **Cuentan:** las `SIN_MAQUINA_COMPATIBLE` (D-51), con el motivo «Ninguna máquina de su capacidad acepta su tonalidad». El sistema también avisa al cargar la partida.
+- Cada fila guarda el motivo del algoritmo en `motivo_bloqueo`.
 
 **`planificacion_maquina`.** Una fila por cada `ResumenMaquina`:
 
@@ -515,6 +537,16 @@ Implementada en la versión 0.2.0, según la propuesta aprobada (`CONTROL_DE_VER
 
 **Qué se re-planifica.** La vigente `ABIERTA` de la semana en curso, desde D = la fecha del servidor. Hay que seleccionar al menos una incidencia `PENDIENTE` de la semana (D-36).
 
+**Desde la pantalla (D-53).** Incidencias solo lista las incidencias. Registrar y aplicar se hace en un panel de 3 pasos: (1) qué pasó; (2) las partidas de hoy por máquina, para marcar las que ya entraron a máquina (grupo A); (3) «Solo registrar» o «Registrar y re-planificar desde hoy». La re-planificación considera **todas** las incidencias pendientes de la semana (reemplaza a D-36). La propuesta se revisa, confirma o descarta en Planificación semanal, junto al calendario. En el modo guiado el panel muestra un paso a la vez.
+
+**Semana que aún no empieza (D-53).** No se re-planifica: «Generar / Volver a generar» aplica sus incidencias pendientes (máquina: esos días sin partidas; complemento: no antes del primer día completo desde su fecha; prioridad: fecha nueva). Si la versión queda vigente, las incidencias se vinculan (`planificacion_incidencia`), pasan a `CONSIDERADA` y los cambios de prioridad actualizan `pedido.fecha_entrega`. Con la semana ya empezada, volver a generar no las aplica y lo avisa.
+
+**Anular una incidencia (D-57).** Si se registró por error o al final no ocurrió, se anula (con motivo opcional): pasa a `ANULADA`, no se borra y nunca más se aplica. Si estaba `CONSIDERADA`, la vigente no cambia sola: el planificador elige «Anular y volver a generar la semana» (si aún no empieza) o «Anular y re-planificar desde hoy» (si ya empezó; esa re-planificación no exige incidencias, vuelve a aplicar las consideradas de máquina y complemento que siguen teniendo efecto y siempre propone). Un cambio de prioridad considerado devuelve al pedido su fecha de entrega anterior (tomada de la bitácora). No se permite con una propuesta pendiente ni con la semana cerrada. Al volver a generar una semana que aún no empieza se aplican las incidencias `PENDIENTE` y también las `CONSIDERADA` (así no se «pierden»), nunca las `ANULADA` ni las `ATENDIDA`.
+
+**Cerrar sin re-planificar (D-54).** Una incidencia pendiente se puede cerrar sin re-planificar si el planificador la resolvió en planta o ya no aplica: pasa a `ATENDIDA`, deja de considerarse y la vigente no cambia. Las partidas que no se tiñan quedan arrastradas al cerrar la semana.
+
+**Cambio de tonalidades aceptadas (D-53, modifica D-51).** No es una incidencia ni una opción de re-planificación. Si una semana afectada no empezó, Máquinas ofrece «Guardar y volver a generar la semana»; si ya empezó, el cambio rige desde la próxima planificación. Planificación semanal avisa cuando las tonalidades de una máquina cambiaron después de generar la vigente.
+
 **Grupos de partidas:**
 
 - **A — Fijas:** las ubicadas antes de D y las del día D que el planificador marca como ya en máquina (D-31). No cambian: misma máquina, día, clasificación, orden y lavado. Si una fija del día D se conformó ese mismo día, su tela sale de la bolsa ese día.
@@ -541,6 +573,61 @@ Implementada en la versión 0.2.0, según la propuesta aprobada (`CONTROL_DE_VER
 - **Descartar:** la propuesta se elimina con todas sus filas y no queda en el historial (D-26). Las incidencias siguen `PENDIENTE`.
 - La bitácora registra `PROPONER`, `CONFIRMAR` y `DESCARTAR` (D-37).
 - Si algo falla, no se guarda nada y la vigente queda intacta (RN-19, HU-18 C10).
+- **Con otra versión de la proyección (D-52).** «Usar como vigente» con la semana empezada usa este mismo camino sin incidencias seleccionadas: lo anterior a D se conserva de la vigente y desde D se decide con la proyección de la otra versión. Se vuelven a aplicar las incidencias de máquina y de complemento ya consideradas en la semana que siguen teniendo efecto desde D; las `PENDIENTE` no. Siempre se propone (RF55 informa la F de la vigente evaluada con la nueva proyección, pero no decide): el planificador ya pidió el cambio. Al confirmar, esa versión de la proyección pasa a `VIGENTE` y su candidata de semana completa queda `REEMPLAZADA`.
+
+---
+
+### 9.6 Parque oficial de máquinas (D-51)
+
+`BD/datos_iniciales.sql` registra las 10 máquinas, todas con objetivo semanal 16:
+
+| Máquinas | Barca | Tonalidades aceptadas |
+|---|---|---|
+| `M600-1`, `M600-2` | `600 C` | Todas |
+| `M400-1`, `M400-2` | `400 C` | Todas |
+| `M450-1` | `450 B` | Blanco, Claro y Medio |
+| `M300-1` | `300 B` | Solo Blanco |
+| `M300-2` | `300 B` | Blanco y Claro |
+| `M200-1`, `M200-2`, `M200-3` | `200 C` | Todas |
+
+El perfil `demo` del backend (semanas del R2.2) solo carga sus datos si la base no tiene máquinas.
+
+### 9.7 Cambio de tonalidades de una máquina (D-51)
+
+Antes de guardar un cambio de tonalidades aceptadas (o de capacidad):
+
+- Si alguna partida `PENDIENTE` se queda sin máquina compatible, el sistema muestra la lista y pide confirmación.
+- Si la planificación vigente abierta tiene, desde hoy, partidas en esa máquina cuya tonalidad deja de aceptarse, muestra la lista y ofrece dos opciones:
+  - **Guardar y re-planificar desde hoy:** usa la re-planificación de la sección 9.5, que conserva hasta el día anterior. Se puede re-planificar sin incidencias (`cambioMaquinas`).
+  - **Guardar y aplicar desde la próxima planificación.**
+
+  La planificación vigente nunca se modifica sola.
+- El cambio queda en la bitácora con usuario, fecha y los valores anterior y nuevo.
+
+### 9.8 Versiones de la proyección de una semana (D-52)
+
+Pedido por el asesor (11/11/2026). No es una simulación aparte: todas las versiones son datos reales de la semana y solo una es la vigente.
+
+**Comportamiento**
+1. Cada proyección subida para una semana es una **versión** (V1, V2, V3…, en orden de subida, con su fecha y hora). Subir una nueva no borra la anterior ni cambia la planificación vigente; tampoco pide confirmación. No se sube en una semana cerrada.
+2. `proyeccion_tejeduria.estado`: `VIGENTE` es la versión de la planificación vigente (sin vigente, la última cargada, que es la que usa el botón «Generar planificación»); `CARGADA`, cualquier otra; `ELIMINADA`, como en D-46.
+3. Cada versión puede tener su planificación (`POST /semanas/{lunes}/planificaciones?proyeccion={id}`): mismo algoritmo, mismos parámetros, mismas partidas candidatas y mismo stock inicial. Si la semana tiene una vigente de otra versión, la nueva queda `CANDIDATA` (no vigente) y no marca la semana siguiente. Volver a generar una versión reemplaza su candidata anterior. Sin vigente en la semana, la planificación generada pasa a ser la vigente.
+4. **Usar como vigente** (`POST /planificaciones/{id}/cambio-vigente`), solo para el Planificador y con confirmación:
+   - semana sin empezar (hoy antes del lunes) o sin vigente: la candidata pasa a vigente y la anterior vuelve a ser candidata de su versión (si era una re-planificación, queda `REEMPLAZADA`). Se puede volver.
+   - semana empezada: re-planificación desde hoy (sección 9.5) con la otra versión; queda como propuesta que se confirma o se descarta.
+   - semana terminada sin cerrar: no se permite; se cierra con la vigente.
+   - Antes de confirmar se avisa de las incidencias pendientes y consideradas de la semana, de las re-planificaciones confirmadas y de si la candidata tiene el stock desactualizado (`GET /planificaciones/{id}/cambio-vigente`).
+   - En todos los casos, la versión de la proyección pasa a `VIGENTE` y la semana siguiente queda desactualizada (D-19).
+5. Exportar, el usuario Consulta y el cierre usan siempre la vigente. Exportar rechaza una planificación que no es la vigente. El panel de versiones (`GET /semanas/{lunes}/versiones-proyeccion`) es solo del Planificador.
+6. Al cerrar la semana, el panel desaparece y solo se ve la vigente. Las demás planificaciones quedan `CANDIDATA` en solo lectura: no se sube, genera ni cambia la vigente.
+7. Bitácora: `IMPORTAR` (versión subida, con «la planificación vigente no cambia»), `GENERAR` (con la versión y si es no vigente) y `CAMBIAR_VIGENTE`.
+8. Corregir un registro de la proyección vigente sigue siendo D-06 (con confirmación, invalida la vigente y su candidata). Modificar una partida Asignada o Sobrante invalida también las candidatas que la tienen (D-24).
+
+**Pantalla de Planificación**
+- Con dos o más versiones y la semana abierta, el panel de versiones va en una fila debajo de «Visualización». Cada versión es una casilla con su color y solo su nombre («V1», «V2»…; la fecha de carga queda en la ayuda al pasar el puntero) (V1 azul #234F79 y V2 oliva #5B663A, según imagenes/colores.png; luego verde petróleo #1F6F6B, ciruela #6B3A5E y pizarra; el color va por el lugar de la versión entre las no eliminadas, no por su número, así que nunca se repite). Máximo 5 versiones no eliminadas por semana, una por color: al cargar o restaurar la sexta se avisa que hay que eliminar alguna (el backend la rechaza con MAXIMO_VERSIONES_PROYECCION), y su estado: «★ Vigente», «Generada» con «Usar como vigente», o «Sin planificación» con «Generar» (casilla gris, deshabilitada). Como máximo dos marcadas; al abrir, solo la vigente.
+- Banner si hay una versión más nueva sin planificar: «Subiste una proyección nueva (V2). La planificación que ves sigue basada en la V1. [Generar V2]».
+- Calendario (siempre, haya o no versiones): todas las celdas en gris claro; la carga solo en el contador «2/3» (ámbar bajo el mínimo del día, verde si está completo, gris en otro caso). Con una sola versión marcada no hay colores de versión y la tarjeta de cada partida lleva un borde algo más oscuro (#A3B5CA) para que resalte. Las líneas del calendario (contorno, filas y columnas) van más marcadas (#8A9DB4) y el encabezado «Máquina» va centrado y sin mayúsculas. La leyenda muestra el significado del contador y, con dos versiones, sus colores y «igual en ambas».
+- Con dos versiones marcadas, en cada celda las partidas se agrupan en cajas como en imagenes/colores.png: borde claro y fondo suave de la versión; arriba, un cuadrito con el color oscuro de la versión del tamaño de «V1» y, a la derecha, su contador «2/3» con el color de carga sobre el fondo de la caja; debajo, las partidas en tarjetas blancas (V1: cuadrito #234F79, borde #7DA0C1, fondo #E4EDF6; V2: #5B663A, #A0AE84, #E9EEDC). En la caja de las iguales en ambas, los cuadritos «V1» y «V2» van juntos, con un pequeño espacio, y a la derecha «V1 2/3 · V2 2/3». Con dos versiones el contador sale de la esquina de la celda y va junto al cuadrito de su versión; si una versión no tiene partidas propias en la celda va en la caja de las iguales, y si tampoco, arriba de las cajas. Orden: primero la caja de la V1 con todas sus partidas, luego la de la V2 y al final la caja «V1·V2» (borde con los dos colores) con las iguales en ambas. Cada partida cae en un caso: (a) misma máquina, día y estado → una tarjeta en la caja «V1·V2»; (b) misma máquina y día con distinto estado → también en la caja «V1·V2», y la marca de sobrante indica en qué versión lo es; (c) en otra máquina o día → una tarjeta en cada lugar, con borde punteado y «En V1: M400-1 mar 17/11 · En V2: M400-2 jue 19/11»; (d) solo en una versión → «En V2: Bloqueada — motivo» o «En V2: sigue Pendiente». Contador «V1 2/3 · V2 3/3», interruptor «Solo diferencias» (oculta el caso a) y una tarjeta de indicadores por versión, con su color (asignadas, sobrantes, bloqueadas y lavados; sin la función objetivo). Las vistas Día y Máquina y el detalle de la celda usan las mismas cajas; las pestañas Sobrantes y Bloqueadas muestran la columna Versión solo con dos versiones marcadas. La lógica está en `FRONT/frontend/src/lib/versiones.ts`.
 
 ---
 
@@ -652,7 +739,7 @@ Transcritos del catálogo. Los marcados con ⚠ tienen una redacción que se va 
 
 | N° | Actor | Requisito | Prioridad |
 |---|---|---|---|
-| RF15 | Planificador | El sistema deberá permitir al Planificador registrar cada máquina de tintorería con su código, capacidad, clasificación de color, tiempo de procesamiento por partida, objetivo semanal y estado. | Alta |
+| RF15 | Planificador | El sistema deberá permitir al Planificador registrar cada máquina de tintorería con su código, capacidad, clasificación de color, tiempo de procesamiento por partida, objetivo semanal y estado. Para cada máquina se registran además las tonalidades que acepta; por defecto, las cuatro (D-51). | Alta |
 | RF16 | Planificador | El sistema deberá permitir al Planificador registrar, para una máquina de tintorería, el intervalo de fecha y hora de indisponibilidad y el motivo correspondiente. | Alta |
 | RF17 | Sistema | Durante un intervalo de indisponibilidad registrado, el sistema deberá actualizar el estado de la máquina a “Indisponible” o “En Mantenimiento”, según el motivo de indisponibilidad registrado para excluir dicho intervalo al calcular la disponibilidad. | Alta |
 | RF18 | Planificador | El sistema deberá permitir al Planificador buscar máquinas mediante su código o clasificación de color y consultar su estado de disponibilidad. | Media |
@@ -672,7 +759,7 @@ Transcritos del catálogo. Los marcados con ⚠ tienen una redacción que se va 
 | RF27 | Sistema | El sistema deberá distribuir las partidas candidatas entre las máquinas y los días de la semana considerando el objetivo semanal de cada máquina y procurando mantener una carga equilibrada. | Alta |
 | RF28 | Sistema | Cuando no sea posible alcanzar los objetivos semanales previstos, el sistema deberá generar una asignación factible con las partidas candidatas, respetando las restricciones de disponibilidad, capacidad y compatibilidad de las máquinas, incluso cuando no existan pedidos pendientes que permitan completar la carga. | Alta |
 | RF29 | Sistema | El sistema deberá mostrar, para cada máquina, la diferencia entre la cantidad de partidas asignadas y su objetivo semanal, indicando la cantidad faltante o excedente. | Alta |
-| RF30 | Sistema | Cuando una máquina no alcance su objetivo semanal, el sistema deberá recomendar artículos y pedidos pendientes cuya producción permita completar la carga semanal de las máquinas de tintorería. | Alta |
+| RF30 | Sistema | Cuando una máquina no alcance su objetivo semanal, el sistema deberá recomendar qué tejer de más en la misma semana (pedido, artículo, kilos y día de tejido) para completar con partidas pendientes el espacio libre de su calendario, y permitir crear con esas recomendaciones una nueva versión de la proyección. | Alta |
 | RF31 | Sistema | El sistema deberá mostrar la planificación semanal en un calendario organizado por máquina de tintorería y día de la semana. | Alta |
 | RF32 | Sistema | El sistema deberá incluir en la planificación todas las partidas candidatas que puedan ser asignadas a una máquina compatible, incluso cuando su incorporación provoque que una máquina exceda su objetivo semanal. | Alta |
 | RF33 | Sistema | El sistema deberá diferenciar visualmente las partidas clasificadas como “Sobrante” respecto de las partidas asignadas regularmente. | Alta |
@@ -794,7 +881,7 @@ Transcritas del R3.2: 21 historias y 96 criterios en formato Gherkin. Los casos 
 **Como** Planificador, **Quiero** registrar y modificar las características de las máquinas de tintorería, **Para** que el sistema considere sus condiciones al generar la planificación.  
 *Prioridad:* Alta · *Requisitos:* RF15, RF18, RF19
 
-- **C1 — Registro de máquina.** **Dado que** quiero registrar una máquina de tintorería · **Cuando** registro su código, capacidad, clasificación de color, tiempo de procesamiento por partida, objetivo semanal y estado · **Entonces** el sistema guarda la máquina con la información registrada
+- **C1 — Registro de máquina.** **Dado que** quiero registrar una máquina de tintorería · **Cuando** registro su código, capacidad, clasificación de color, tiempo de procesamiento por partida, objetivo semanal y estado (y las tonalidades que acepta, D-51) · **Entonces** el sistema guarda la máquina con la información registrada
 - **C2 — Búsqueda de máquinas.** **Dado que** existen máquinas registradas · **Cuando** realizo una búsqueda por código o clasificación de color · **Entonces** el sistema muestra las máquinas que coinciden con el criterio ingresado y su estado de disponibilidad
 - **C3 — Edición de máquina.** **Dado que** una máquina ya se encuentra registrada · **Cuando** modifico su información · **Entonces** el sistema guarda los cambios realizados.
 
@@ -968,24 +1055,32 @@ No los resuelvas por tu cuenta; pregunta. La numeración se conserva para que la
 
 **Abiertos:**
 
-- **4.** **Lista de tonalidades.** Los cuatro valores (`BLANCO`, `CLARO`, `MEDIO`, `OSCURO`) vienen de la experimentación. La lista formal de colores con su tonalidad se confirmará con el jefe de planeamiento.
+- **4.** **Lista de tonalidades.** Los cuatro valores (`BLANCO`, `CLARO`, `MEDIO`, `OSCURO`) vienen de la experimentación. La lista formal de colores con su tonalidad se confirmará con el jefe de planeamiento. Las tonalidades que acepta cada máquina las marca el jefe de planeamiento en la pantalla Máquinas (D-51).
 - **11.** **Tolerancia de tiempo del jefe de planeamiento.** El RNF03 fija 60 s; su tolerancia real sigue pendiente de confirmar.
+- **14.** **Ordenar las partidas de cada día de claro a oscuro** para reducir lavados. Requiere repetir la experimentación; no se hace ahora.
 
 **Resueltos** (detalle en `CONTROL_DE_VERSIONES/DECISIONES.md`):
 
+- **12. Carga de la planta concentrada al inicio de la semana:** el reparto diario pasa a ser proporcional y escalonado (D-48, RN-13). La experimentación del R2.2 se volverá a correr con esta regla; hasta entonces, las pruebas de regresión contra los Excel de R quedan pendientes.
+- **13. Coherencia entre barca y tonalidad:** la compatibilidad pasa a ser por capacidad y tonalidades aceptadas por máquina; la letra de la barca es informativa (D-51, que reemplaza a D-49 y D-50; RN-06).
+
 - **1. Re-planificación en el código:** implementada (sección 9.5).
-- **2. Recomendaciones de tejeduría** (RF30, HU-13 C2 y C5): regla aprobada; **se implementa en un incremento posterior**.
-  - Déficit por **barca**: `faltan(barca) = Σ max(0, −diferencia_objetivo)` de sus máquinas. Si es 0, la barca no recibe recomendaciones.
-  - Candidatas: partidas `PENDIENTE` de la barca que no quedaron Asignadas ni Sobrantes en la versión, **incluidas las que no tuvieron ningún kilo** en la semana. Las arrastradas no entran (RF48).
-  - Orden: fecha de entrega más próxima; si empatan, **menos kg por tejer**. Se toman las primeras `faltan(barca)`.
-  - Qué tejer: por cada componente, `kg_a_tejer = max(0, kg requeridos − saldo final del domingo de la bolsa)`, descontando el saldo en ese orden. Se recomienda el par pedido-artículo (`detalle_pedido`) con sus kilos.
-  - La recomendación es para la **proyección de la semana siguiente** (tejido de sábado a viernes). No se guarda una fecha límite.
-  - Sin candidatas, no se recomienda nada para esa barca (HU-13 C5).
-  - Se guarda en la tabla `recomendacion_tejido` (propuesta en `CONTROL_DE_VERSIONES/revisiones/2026-10-25_propuesta-RF30-recomendaciones.md`).
-- **3. Partida sin máquina de su barca:** no se registra en la versión; se avisa al cargar y al planificar (D-12).
+- **2. Recomendaciones de tejeduría** (RF30, HU-13; **implementado, D-56**, reemplaza la regla por barca y la recomendación para la semana siguiente). Dicen qué tejer **de más en la misma semana** de la planificación para llenar el espacio libre de su calendario. Se calculan después de generar o re-planificar, con el resultado guardado de cada versión y en la misma transacción (RN-19), para todos los días de la semana sin importar el día en que se genera. No usan ni cambian el algoritmo.
+  - **Espacio libre** por máquina y día hábil = máximo diario − partidas del día (el «2/3» del calendario). **Déficit** = `max(0, objetivo − Asignadas)`. Por máquina se recomiendan a lo más `min(déficit, espacio libre de la semana)` partidas.
+  - **Candidatas:** partidas `PENDIENTE` no ubicadas en la versión (Bloqueadas y sin ningún kilo), compatibles con la máquina (RN-06, D-51). No entran las arrastradas (RF48) ni las que no tienen máquina compatible.
+  - **Orden:** entrega más próxima; si empatan, menos kg por tejer. **Reparto:** primero la máquina con mayor déficit. En ella, el día sigue la misma regla de llenado del calendario (RN-13, D-48): con meta = partidas del calendario + las recomendadas, cada día debería llevar `⌊meta·j/H + desfase⌋` menos lo anterior (tope: máximo diario), con el mismo desfase que rota entre máquinas y semanas; se elige el día al que más le falta para su cuota (si empatan, el más temprano). Así la vista previa no carga los primeros días (3, 3, 2, 2…) y se parece al reparto que hará el algoritmo (corregido por la autora el 13/11; antes era «el día con más espacio libre, el más temprano si empatan»). Cada partida, una sola vez, para una máquina y un día.
+  - **Kg por componente** = `max(0, kg requeridos − tela que la versión dejó sin usar y ya estaba disponible ese día)`, descontada una sola vez en el orden del reparto. La partida que ya tiene toda su tela no se recomienda y esa tela queda descontada para ella.
+  - **Día de tejido:** el más tardío que llega a tiempo, entre el sábado anterior a la semana y el día anterior al que se llena (lo tejido de lunes a viernes está disponible al día siguiente; lo del sábado, el lunes; **no se teje en domingo**). Si un día no tiene fecha de tejido posible, no se recomienda para ese día.
+  - **Presentación por artículo** (pedido de la autora, 13/11; es la principal): arriba, tres números (kg de tejido adicional, artículos, partidas que se completarían). Una fila por artículo con tipo (principal, complemento o ambos), kg a tejer, partidas que completa y «se necesita desde» (su primer día de tejido), ordenada por partidas que completa y luego por kg. Al desplegarla: kg a tejer por día («tejer a más tardar») y las partidas que abastece con pedido, color, máquina, día que llena, kg de ese artículo, la otra tela que necesitan («también necesita») y entrega. La vista «Por máquina» queda como alternativa.
+  - **Selección para la vista previa:** por artículo (todas sus filas) o por partida (sus dos telas juntas). Una partida necesita principal y complemento: en la vista previa solo entran las que tienen todas sus telas seleccionadas, y la barra avisa «N quedan incompletas sin <artículo>» con «Agregar lo que falta». El Excel para tejeduría no cambia: sigue con el detalle por pedido, artículo y día de tejido.
+  - **Cada recomendación** (una fila por componente): máquina, día que llena, partida, pedido, artículo, componente, kg, «tejer a más tardar el <día>» y entrega. Si no se cubre todo: «Se cubren m de n: no hay más partidas pendientes compatibles» (o «… no hay más espacio libre» si el límite es el calendario). Sin candidatas, nada (HU-13 C5). No hay avisos aparte.
+  - **Solo para ver (corrección de la autora, 13/11):** las recomendaciones no crean versiones de la proyección. Se pueden seleccionar (las filas de una partida van juntas; casilla en el encabezado de cada máquina) para verlas en «Ver en el calendario», una vista previa que no guarda nada. Si tejeduría teje de más, eso llega en la proyección que el planificador sube, y recién ahí se genera esa versión (D-52). Antes existía «Crear versión con las recomendaciones» (proyección de origen + filas marcadas); se quitó.
+  - **Por versión:** cada versión planificada tiene las suyas; una versión sin planificación no tiene. Al cerrar la semana solo quedan las de la vigente. Una versión generada antes de D-56 las calcula la primera vez que se consultan. Tabla `recomendacion_tejido`. **Exportación** para tejeduría de la vigente, ordenada por día de tejido. El usuario Consulta solo ve las de la vigente, sin marcar ni crear versiones. **Vista previa:** «Ver en el calendario» muestra el calendario de la versión con las partidas recomendadas (o solo las marcadas) en el día que llenan, con borde punteado; es una estimación, porque al generar la versión creada el algoritmo vuelve a repartir toda la tela.
+
+- **3. Partida sin máquina compatible:** queda Bloqueada con el motivo «Ninguna máquina de su capacidad acepta su tonalidad» y se avisa al cargar (D-51, reemplaza a D-12).
 - **5. Indisponibilidad de parte de un día:** el día cuenta como indisponible (D-08).
 - **6. Dominios sin enumerar:** fijados con CHECK en la base (D-20, sección 9.1).
 - **7. Cambio de prioridad:** `pedido.fecha_entrega` se actualiza al confirmar la re-planificación, no al registrar la incidencia (D-13, D-13b).
-- **8. Vigencia:** volver a generar crea una versión nueva vigente y la anterior queda `REEMPLAZADA` (D-14).
+- **8. Vigencia:** volver a generar con la proyección de la vigente crea una versión nueva vigente y la anterior queda `REEMPLAZADA` (D-14). Generar con otra versión de la proyección crea una `CANDIDATA` y la vigente no cambia (D-52).
 - **9. Primera semana:** stock inicial 0 (D-15).
 - **10. Planificar una semana antes de cerrar la anterior:** se permite, sin enviar las Asignadas ni Sobrantes de la vigente abierta de la otra semana (D-16).

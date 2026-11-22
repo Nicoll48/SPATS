@@ -54,13 +54,24 @@ public final class ArmadoReplanificacion {
     public record FilaVigente(String partida, String pedido, String maquina, LocalDate dia,
                               ClasificacionResultado clasificacion, int ordenSecuencia, LocalDate fechaDisponible) { }
 
-    /** Incidencia seleccionada, con su entidad afectada. */
+    /**
+     * Incidencia seleccionada, con su entidad afectada.
+     *
+     * @param heredada ya considerada en una re-planificación confirmada de la semana; se vuelve a aplicar desde D al
+     *                 usar otra versión como vigente (D-52). Si su partida ya quedó fija, no tiene efecto.
+     */
     public record IncidenciaAplicada(Integer id, TipoIncidencia tipo, String maquina, String partida, String pedido,
-                                     LocalDateTime fechaHoraDisponibilidad, LocalDate nuevaFechaEntrega) { }
+                                     LocalDateTime fechaHoraDisponibilidad, LocalDate nuevaFechaEntrega, boolean heredada) {
+
+        public IncidenciaAplicada(Integer id, TipoIncidencia tipo, String maquina, String partida, String pedido,
+                                  LocalDateTime fechaHoraDisponibilidad, LocalDate nuevaFechaEntrega) {
+            this(id, tipo, maquina, partida, pedido, fechaHoraDisponibilidad, nuevaFechaEntrega, false);
+        }
+    }
 
     /**
      * @param datos              entrada del algoritmo con la re-planificación
-     * @param alternativaVigente decisiones de la vigente para evaluarlas en el mismo escenario (RF55)
+     * @param alternativaVigente decisiones de la vigente para evaluarlas sobre la misma instancia (RF55)
      */
     public record Armado(DatosSemana datos, List<AsignacionPartida> alternativaVigente, List<String> advertencias) { }
 
@@ -105,6 +116,7 @@ public final class ArmadoReplanificacion {
                         indisponibilidades.add(new Indisponibilidad(i.maquina(), dia, "Incidencia de máquina"));
                 }
                 case PROBLEMA_COMPLEMENTO -> {
+                    if (i.heredada() && (fijasPorPartida.contains(i.partida()) || !candidatas.contains(i.partida()))) continue;
                     if (fijasPorPartida.contains(i.partida()))
                         throw new ReglaNegocioException("INCIDENCIA_SOBRE_PARTIDA_FIJA", "La incidencia de la partida "
                                 + i.partida() + " no puede considerarse: la partida ya está ubicada antes de hoy o ya entró a "

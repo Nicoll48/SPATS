@@ -15,6 +15,7 @@ import pe.edu.pucp.spats.auditoria.entity.TipoOperacion;
 import pe.edu.pucp.spats.auditoria.service.BitacoraService;
 import pe.edu.pucp.spats.comun.error.ConflictoException;
 import pe.edu.pucp.spats.comun.error.RecursoNoEncontradoException;
+import pe.edu.pucp.spats.incidencia.entity.EstadoIncidencia;
 import pe.edu.pucp.spats.incidencia.entity.Incidencia;
 import pe.edu.pucp.spats.incidencia.entity.TipoIncidencia;
 import pe.edu.pucp.spats.pedido.service.PedidoService;
@@ -25,6 +26,7 @@ import pe.edu.pucp.spats.planificacion.repository.PlanificacionIncidenciaReposit
 import pe.edu.pucp.spats.planificacion.repository.PlanificacionSemanalRepository;
 import pe.edu.pucp.spats.tejeduria.entity.ProyeccionTejeduria;
 import pe.edu.pucp.spats.tejeduria.entity.Semana;
+import pe.edu.pucp.spats.tejeduria.service.ProyeccionService;
 import spats.algoritmo.salida.Indicadores;
 
 /**
@@ -49,12 +51,18 @@ public class GuardadoReplanificacion {
     private final ReglasVigencia reglasVigencia;
     private final EntityManager em;
     private final BitacoraService bitacora;
+    private final ProyeccionService proyecciones;
     private final Clock reloj;
+
+    private final pe.edu.pucp.spats.planificacion.recomendacion.RecomendacionesTejidoService recomendaciones;
 
     public GuardadoReplanificacion(PlanificacionSemanalRepository planificaciones,
                                    PlanificacionIncidenciaRepository planificacionIncidencias, GuardadoPlanificacion guardado,
                                    PropuestasPendientes propuestas, PedidoService pedidos, ReglasVigencia reglasVigencia,
-                                   EntityManager em, BitacoraService bitacora, Clock reloj) {
+                                   EntityManager em, BitacoraService bitacora, ProyeccionService proyecciones, Clock reloj,
+            pe.edu.pucp.spats.planificacion.recomendacion.RecomendacionesTejidoService recomendaciones) {
+        this.recomendaciones = recomendaciones;
+        this.proyecciones = proyecciones;
         this.planificaciones = planificaciones;
         this.planificacionIncidencias = planificacionIncidencias;
         this.guardado = guardado;
@@ -85,10 +93,18 @@ public class GuardadoReplanificacion {
         guardado.guardarFilas(plan, entrada, r);
         planificacionIncidencias.saveAll(e.idsIncidencias().stream()
                 .map(id -> new PlanificacionIncidencia(plan, em.getReference(Incidencia.class, id))).toList());
+        recomendaciones.calcular(plan);   // RF30 (D-56)
         bitacora.registrar(TipoOperacion.PROPONER, "planificacion_semanal", plan.getId(),
                 "Re-planificación de la semana " + entrada.lunes() + " desde " + e.dia() + ", versión "
-                        + plan.getNumeroVersion());
+                        + plan.getNumeroVersion() + (cambioVersion(entrada) ? ", para usar la proyección V"
+                        + em.getReference(ProyeccionTejeduria.class, entrada.idProyeccion()).getVersion() + " como vigente" : ""));
         return plan;
+    }
+
+    /** true si la re-planificación usa una versión de la proyección distinta de la de la vigente (D-52). */
+    private boolean cambioVersion(EntradaPlanificacion entrada) {
+        return planificaciones.findBySemanaIdAndEsVigenteTrue(entrada.idSemana())
+                .map(v -> !v.getProyeccion().getId().equals(entrada.idProyeccion())).orElse(false);
     }
 
     /** Si la propuesta venció (no se confirmó el mismo día), la elimina y devuelve true. */
@@ -107,6 +123,7 @@ public class GuardadoReplanificacion {
                 .filter(PlanificacionSemanal::abierta)
                 .orElseThrow(() -> new ConflictoException("VIGENTE_CAMBIO",
                         "La planificación vigente de la semana ya no está abierta; descarta la propuesta."));
+        boolean cambioVersion = !p.getProyeccion().getId().equals(vigente.getProyeccion().getId());
         vigente.quitarVigencia(EstadoPlanificacion.REEMPLAZADA);
         bitacora.registrarCambio("planificacion_semanal", vigente.getId(), "es_vigente", true, false);
         planificaciones.flush();   // libera uq_vigente_por_semana antes de que la propuesta pase a vigente
@@ -115,9 +132,11 @@ public class GuardadoReplanificacion {
         // La propuesta parte del saldo de la vigente que reemplaza: si esa estaba desactualizada, también lo está
         if (vigente.isStockDesactualizado()) p.marcarStockDesactualizado();
         reglasVigencia.marcarSemanaSiguiente(p.getSemana().getFechaInicio());
+        if (cambioVersion) usarVersionComoVigente(p, vigente);
 
         int consideradas = 0, actualizados = 0;
         for (Incidencia i : planificacionIncidencias.incidenciasDe(p.getId())) {
+            if (i.getEstado() == EstadoIncidencia.CONSIDERADA) continue;   // heredada de una re-planificación anterior (D-52)
             bitacora.registrarCambio("incidencia", i.getId(), "estado", i.getEstado(), "CONSIDERADA");
             i.considerar();
             consideradas++;
@@ -127,10 +146,29 @@ public class GuardadoReplanificacion {
                 actualizados++;
             }
         }
+        recomendaciones.calcular(p);   // RF30 (D-56): con los pedidos y las incidencias ya actualizados
         bitacora.registrar(TipoOperacion.CONFIRMAR, "planificacion_semanal", p.getId(),
                 "Re-planificación de la semana " + p.getSemana().getFechaInicio() + ", versión " + p.getNumeroVersion()
                         + ": " + consideradas + " incidencias consideradas, " + actualizados + " pedidos con fecha nueva");
         return new Confirmacion(p, consideradas, actualizados);
+    }
+
+    /**
+     * D-52: la propuesta se armó con otra versión de la proyección para usarla como vigente. Esa versión pasa a ser la
+     * VIGENTE y su candidata de semana completa queda REEMPLAZADA: la nueva vigente ya es su planificación.
+     */
+    private void usarVersionComoVigente(PlanificacionSemanal nueva, PlanificacionSemanal anterior) {
+        proyecciones.hacerVigente(nueva.getProyeccion());
+        for (PlanificacionSemanal c : planificaciones.candidatasDe(nueva.getProyeccion().getId())) {
+            c.quitarVigencia(EstadoPlanificacion.REEMPLAZADA);
+            bitacora.registrarCambio("planificacion_semanal", c.getId(), "estado", EstadoPlanificacion.CANDIDATA,
+                    EstadoPlanificacion.REEMPLAZADA);
+        }
+        bitacora.registrar(TipoOperacion.CAMBIAR_VIGENTE, "planificacion_semanal", nueva.getId(), "Semana "
+                + nueva.getSemana().getFechaInicio() + ": la versión " + nueva.getNumeroVersion() + " (proyección V"
+                + nueva.getProyeccion().getVersion() + ", re-planificada desde " + nueva.getFechaGeneracion().toLocalDate()
+                + ") reemplaza a la versión " + anterior.getNumeroVersion() + " (proyección V"
+                + anterior.getProyeccion().getVersion() + ")");
     }
 
     @Transactional

@@ -1,5 +1,7 @@
 package pe.edu.pucp.spats.maquina.mapper;
 
+import java.util.List;
+
 import org.springframework.stereotype.Component;
 
 import pe.edu.pucp.spats.maquina.dto.MaquinaDtos.IndisponibilidadResponse;
@@ -13,7 +15,7 @@ public class MaquinaMapper {
 
     public MaquinaResponse aResponse(MaquinaTintoreria m, EstadoMaquina estadoActual) {
         return new MaquinaResponse(m.getId(), m.getCodigo(), m.getCapacidad(), m.getClasificacionColor(),
-                m.getObjetivoSemanal(), m.getBarca(), m.getEstado(), estadoActual);
+                m.getObjetivoSemanal(), m.getBarca(), m.getEstado(), estadoActual, List.copyOf(m.getTonalidadesAceptadas()));
     }
 
     public IndisponibilidadResponse aResponse(IndisponibilidadMaquina i) {

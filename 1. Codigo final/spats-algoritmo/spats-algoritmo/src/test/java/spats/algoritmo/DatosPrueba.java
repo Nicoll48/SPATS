@@ -38,6 +38,12 @@ public final class DatosPrueba {
         return this;
     }
 
+    /** Máquina con barca y tonalidades aceptadas explícitas (D-51). */
+    public DatosPrueba maquina(String codigo, int capacidad, String barca, int objetivo, java.util.Set<Tonalidad> aceptadas) {
+        maquinas.add(new Maquina(codigo, capacidad, barca.substring(barca.length() - 1), barca, objetivo, aceptadas));
+        return this;
+    }
+
     public DatosPrueba pedido(String codigo, LocalDate entrega) {
         pedidos.add(new Pedido(codigo, "Cliente " + codigo, entrega.minusDays(40), entrega));
         return this;

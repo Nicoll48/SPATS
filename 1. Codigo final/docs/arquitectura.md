@@ -79,6 +79,6 @@ React 19 + Vite + TypeScript + Tailwind CSS v4, sobre el diseño que ya existía
 | `src/semana/` | Semana seleccionada (lunes), compartida por todas las pantallas. |
 | `src/pages/` | Planificación semanal, Carga de datos, Datos registrados, Máquinas, Incidencias y replanificación, Historial. |
 | `src/components/planning/` | Calendario por máquina y día (cola en `orden_secuencia`, sin horas), tablas de Sobrantes, Bloqueadas y Alertas, flujo guiado. |
-| `_fuera_de_alcance/` | Pantallas y datos simulados que quedaron fuera del alcance (Escenarios, Reportes, parámetros en horas, mock). No se compilan. |
+| `_fuera_de_alcance/` | Pantallas y datos simulados que quedaron fuera del alcance (Reportes, parámetros en horas, mock). No se compilan. |
 
 Las pantallas solo muestran lo guardado: no recalculan indicadores, saldos ni clasificaciones (regla 4 del contexto).

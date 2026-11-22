@@ -55,7 +55,7 @@ def crear_balanceado(path):
 
 def crear_desequilibrado(path):
     wb=xlsxwriter.Workbook(path); f=formatos(wb)
-    ws=wb.add_worksheet('Proyección con brechas'); cabecera(ws,'PROYECCIÓN DE TEJEDURÍA · DESEQUILIBRADA','Escenario deliberado con máquinas sobregiradas y faltantes de abastecimiento.',f,13)
+    ws=wb.add_worksheet('Proyección con brechas'); cabecera(ws,'PROYECCIÓN DE TEJEDURÍA · DESEQUILIBRADA','Caso deliberado con máquinas sobregiradas y faltantes de abastecimiento.',f,13)
     ws.write_row(3,0,['Pedido','Artículo','Partida','Tela principal disponible kg','Complemento disponible kg','Kg requeridos','Máquina','Día','Estado','Cobertura principal %','Cobertura complemento %','Lista','Motivo de bloqueo','Impacto'],f['head'])
     counts={'M1':20,'M2':11,'M3':16,'M4':6,'M5':19,'M6':13,'M7':16,'M8':23,'M9':8}; rr=4; n=1
     for maq,_,_,_ in MAQUINAS:

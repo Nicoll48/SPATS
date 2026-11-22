@@ -56,6 +56,8 @@ class InstanciasSemanalesTest {
         return r;
     }
 
+    // Línea base (referencia_r22.csv) regenerada con la experimentación del R2.2 repetida con el reparto
+    // diario de D-48: regla voraz en las doce instancias y corridas 1 y 2 del ACO de corridas_java.csv.
     @Test
     @DisplayName("PI-03 El modelo de evaluación reproduce los valores del R2.2 en las doce instancias")
     void reproduceModeloR22() throws Exception {

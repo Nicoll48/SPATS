@@ -2,6 +2,7 @@ package pe.edu.pucp.spats.seguridad;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -28,6 +29,7 @@ import pe.edu.pucp.spats.comun.dominio.ClasificacionColor;
 import pe.edu.pucp.spats.maquina.controller.MaquinaController;
 import pe.edu.pucp.spats.maquina.dto.MaquinaDtos.MaquinaResponse;
 import pe.edu.pucp.spats.maquina.entity.EstadoMaquina;
+import pe.edu.pucp.spats.partida.entity.TonalidadColor;
 import pe.edu.pucp.spats.maquina.service.MaquinaService;
 import pe.edu.pucp.spats.seguridad.config.PropiedadesSeguridad;
 import pe.edu.pucp.spats.seguridad.config.SeguridadConfig;
@@ -51,7 +53,7 @@ class PermisosPorPerfilTest {
 
     MaquinaResponse maquina() {
         return new MaquinaResponse(1, "M400-1", new BigDecimal("400"), ClasificacionColor.C, 16,
-                "400 C", EstadoMaquina.OPERATIVA, EstadoMaquina.OPERATIVA);
+                "400 C", EstadoMaquina.OPERATIVA, EstadoMaquina.OPERATIVA, List.of(TonalidadColor.values()));
     }
 
     @Test
@@ -83,7 +85,7 @@ class PermisosPorPerfilTest {
     @Test
     @DisplayName("Planificador puede modificar")
     void planificadorModifica() throws Exception {
-        when(servicio.modificar(anyInt(), any())).thenReturn(maquina());
+        when(servicio.modificar(anyInt(), any(), anyBoolean())).thenReturn(maquina());
         mvc.perform(put("/api/maquinas/1").contentType(MediaType.APPLICATION_JSON).content(CUERPO)
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_PLANIFICADOR"))))
            .andExpect(status().isOk());

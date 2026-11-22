@@ -14,6 +14,7 @@ import java.util.Objects;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
 
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,8 +44,12 @@ import pe.edu.pucp.spats.planificacion.dto.PlanificacionDtos.ResumenResponse;
 import pe.edu.pucp.spats.planificacion.dto.PlanificacionDtos.TipoAlerta;
 import pe.edu.pucp.spats.planificacion.dto.PlanificacionDtos.UbicacionResponse;
 import pe.edu.pucp.spats.planificacion.dto.PlanificacionDtos.VersionResponse;
+import pe.edu.pucp.spats.planificacion.dto.PlanificacionDtos.PlanificacionDeVersionResponse;
+import pe.edu.pucp.spats.planificacion.dto.PlanificacionDtos.VersionProyeccionPlanResponse;
+import pe.edu.pucp.spats.planificacion.dto.PlanificacionDtos.VersionesSemanaResponse;
 import pe.edu.pucp.spats.planificacion.entity.BolsaArticulo;
 import pe.edu.pucp.spats.planificacion.entity.Enumeraciones.ClasificacionResultado;
+import pe.edu.pucp.spats.planificacion.entity.Enumeraciones.EstadoPlanificacion;
 import pe.edu.pucp.spats.planificacion.entity.PlanificacionMaquina;
 import pe.edu.pucp.spats.planificacion.entity.PlanificacionPartida;
 import pe.edu.pucp.spats.planificacion.entity.PlanificacionSemanal;
@@ -90,7 +95,9 @@ public class ConsultaPlanificacionService {
                                         BolsaArticuloRepository bolsas, PartidaComponenteRepository componentes,
                                         IndisponibilidadRepository indisponibilidades, PlanificacionMapper mapper,
                                         ReglasVigencia reglasVigencia, PropuestasPendientes propuestas,
-                                        PlanificacionIncidenciaRepository planificacionIncidencias) {
+                                        PlanificacionIncidenciaRepository planificacionIncidencias,
+                                        pe.edu.pucp.spats.auditoria.repository.BitacoraAuditoriaRepository bitacora) {
+        this.bitacora = bitacora;
         this.semanas = semanas;
         this.proyecciones = proyecciones;
         this.planificaciones = planificaciones;
@@ -105,6 +112,8 @@ public class ConsultaPlanificacionService {
         this.planificacionIncidencias = planificacionIncidencias;
     }
 
+    private final pe.edu.pucp.spats.auditoria.repository.BitacoraAuditoriaRepository bitacora;
+
     public EstadoSemanaResponse estadoSemana(LocalDate lunes) {
         SemanaPlanificacion periodo = new SemanaPlanificacion(lunes);
         return semanas.buscar(lunes).map(s -> {
@@ -113,13 +122,16 @@ public class ConsultaPlanificacionService {
             PlanificacionSemanal vigente = planificaciones.findBySemanaIdAndEsVigenteTrue(s.getId()).orElse(null);
             PlanificacionResumen plan = vigente == null ? null : new PlanificacionResumen(vigente.getId(),
                     vigente.getNumeroVersion(), vigente.getEstado(), vigente.getFechaGeneracion(), vigente.getProyeccion().getId());
-            boolean desactualizada = vigente != null && proyeccion != null && !vigente.getProyeccion().getId().equals(proyeccion.id());
+            // D-52: hay una versión de la proyección más nueva que la de la vigente (la vigente no cambió por eso)
+            boolean desactualizada = vigente != null && proyecciones.noEliminadas(s.getId()).stream()
+                    .anyMatch(v -> v.getVersion() > vigente.getProyeccion().getVersion());
             PlanificacionResumen propuesta = propuestas.pendiente(s.getId()).map(p -> new PlanificacionResumen(p.getId(),
                     p.getNumeroVersion(), p.getEstado(), p.getFechaGeneracion(), p.getProyeccion().getId())).orElse(null);
             return new EstadoSemanaResponse(periodo.lunes(), periodo.domingo(), proyeccion, plan,
                     historial(s.getId()).size(), desactualizada,
-                    vigente == null ? null : reglasVigencia.stockDesactualizado(vigente).orElse(null), propuesta);
-        }).orElse(new EstadoSemanaResponse(periodo.lunes(), periodo.domingo(), null, null, 0, false, null, null));
+                    vigente == null ? null : reglasVigencia.stockDesactualizado(vigente).orElse(null), propuesta,
+                    vigente == null || !vigente.abierta() ? List.of() : bitacora.maquinasConTonalidadesCambiadasDesde(vigente.getFechaGeneracion()));
+        }).orElse(new EstadoSemanaResponse(periodo.lunes(), periodo.domingo(), null, null, 0, false, null, null, List.of()));
     }
 
     public PlanificacionDetalleResponse vigente(LocalDate lunes) {
@@ -187,6 +199,39 @@ public class ConsultaPlanificacionService {
         return lista.stream().map(p -> mapper.version(p, conteos.getOrDefault(p.getId(), Map.of()))).toList();
     }
 
+    /**
+     * Versiones no eliminadas de la proyección de la semana (V1, V2, ...) con su planificación en uso: la vigente o la
+     * candidata de esa versión (D-52). Solo para el planificador: el usuario Consulta ve solo la vigente.
+     */
+    @PreAuthorize("hasRole('PLANIFICADOR')")
+    public VersionesSemanaResponse versionesProyeccion(LocalDate lunes) {
+        return semanas.buscar(lunes).map(s -> {
+            PlanificacionSemanal vigente = planificaciones.findBySemanaIdAndEsVigenteTrue(s.getId()).orElse(null);
+            List<PlanificacionSemanal> candidatas = planificaciones.findBySemanaIdAndEstadoOrderByNumeroVersionDesc(s.getId(),
+                    EstadoPlanificacion.CANDIDATA);
+            List<Integer> ids = new ArrayList<>(candidatas.stream().map(PlanificacionSemanal::getId).toList());
+            if (vigente != null) ids.add(vigente.getId());
+            Map<Integer, Map<ClasificacionResultado, Long>> conteos = conteos(ids);
+            List<VersionProyeccionPlanResponse> versiones = proyecciones.noEliminadas(s.getId()).stream().map(v -> {
+                PlanificacionSemanal plan = vigente != null && vigente.getProyeccion().getId().equals(v.getId()) ? vigente
+                        : candidatas.stream().filter(c -> c.getProyeccion().getId().equals(v.getId())).findFirst().orElse(null);
+                return new VersionProyeccionPlanResponse(v.getId(), v.getVersion(), v.getFechaCarga(), v.getEstado(),
+                        proyecciones.kgTotales(v.getId()), plan == null ? null : planDeVersion(plan, conteos));
+            }).toList();
+            return new VersionesSemanaResponse(lunes, vigente != null && vigente.getEstado() == EstadoPlanificacion.CERRADA,
+                    vigente == null ? null : vigente.getId(), versiones);
+        }).orElse(new VersionesSemanaResponse(lunes, false, null, List.of()));
+    }
+
+    private PlanificacionDeVersionResponse planDeVersion(PlanificacionSemanal p, Map<Integer, Map<ClasificacionResultado, Long>> conteos) {
+        Map<ClasificacionResultado, Long> c = conteos.getOrDefault(p.getId(), Map.of());
+        return new PlanificacionDeVersionResponse(p.getId(), p.getNumeroVersion(), p.getEstado(), p.isEsVigente(),
+                p.getTipoGeneracion(), p.getFechaGeneracion(), p.isStockDesactualizado(), mapper.indicadores(p),
+                c.getOrDefault(ClasificacionResultado.ASIGNADA, 0L).intValue(),
+                c.getOrDefault(ClasificacionResultado.SOBRANTE, 0L).intValue(),
+                c.getOrDefault(ClasificacionResultado.BLOQUEADA, 0L).intValue());
+    }
+
     public List<BolsaResponse> bolsas(Integer idPlanificacion) {
         buscar(idPlanificacion);
         return bolsas.deLaPlanificacion(idPlanificacion).stream().map(b -> new BolsaResponse(b.getArticulo().getCodigo(),
@@ -243,7 +288,7 @@ public class ConsultaPlanificacionService {
                             saldoDomingo.getOrDefault(c.getDetallePedido().getArticulo().getCodigo(), BigDecimal.ZERO)))
                     .toList();
             return new PartidaBloqueadaResponse(p.getNumeroPartida(), p.getPedido().getNumeroOp(), p.getPedido().getFechaEntrega(),
-                    p.getColor().getNombre(), p.getColor().getTonalidad(), p.getBarca(), p.getPesoTotal(), suyos);
+                    p.getColor().getNombre(), p.getColor().getTonalidad(), p.getBarca(), p.getPesoTotal(), suyos, f.getMotivoBloqueo());
         }).toList();
     }
 
@@ -287,11 +332,15 @@ public class ConsultaPlanificacionService {
      */
     private Map<String, Map<LocalDate, String>> diasDeIncidencias(PlanificacionSemanal plan, SemanaPlanificacion periodo) {
         Map<String, Map<LocalDate, String>> r = new HashMap<>();
-        if (plan.getTipoGeneracion() != pe.edu.pucp.spats.planificacion.entity.Enumeraciones.TipoGeneracion.REPLANIFICACION) return r;
+        boolean replanificacion = plan.getTipoGeneracion() == pe.edu.pucp.spats.planificacion.entity.Enumeraciones.TipoGeneracion.REPLANIFICACION;
         LocalDate D = plan.getFechaGeneracion().toLocalDate();
+        java.time.LocalDateTime finSemana = periodo.domingo().plusDays(1).atStartOfDay();
         for (Incidencia i : planificacionIncidencias.incidenciasDe(plan.getId()))
-            if (i.getTipoIncidencia() == TipoIncidencia.INCIDENCIA_MAQUINA && i.getFechaHoraDisponibilidad() != null)
-                for (LocalDate dia : periodo.diasTocados(D.atStartOfDay(), i.getFechaHoraDisponibilidad()))
+            if (i.getTipoIncidencia() == TipoIncidencia.INCIDENCIA_MAQUINA)
+                // Re-planificación: desde su día D. Generación de una semana que aún no empieza (D-53): desde la ocurrencia
+                for (LocalDate dia : periodo.diasTocados(replanificacion ? D.atStartOfDay()
+                                : (i.getFechaHoraOcurrencia().isBefore(periodo.lunes().atStartOfDay()) ? periodo.lunes().atStartOfDay() : i.getFechaHoraOcurrencia()),
+                        i.getFechaHoraDisponibilidad() == null ? finSemana : i.getFechaHoraDisponibilidad()))
                     r.computeIfAbsent(i.getMaquina().getCodigo(), k -> new LinkedHashMap<>())
                      .putIfAbsent(dia, "Incidencia: " + (i.getDescripcion() == null ? "máquina fuera de servicio" : i.getDescripcion()));
         return r;

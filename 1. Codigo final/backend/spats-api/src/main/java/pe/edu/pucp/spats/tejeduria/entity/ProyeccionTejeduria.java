@@ -14,7 +14,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
-/** Versión de la proyección de tejeduría de una semana. La de mayor número es la vigente (D-06). */
+/** Versión de la proyección de tejeduría de una semana (V1, V2, ...). Ver {@link EstadoProyeccion} (D-52). */
 @Entity
 @Table(name = "proyeccion_tejeduria")
 public class ProyeccionTejeduria {
@@ -59,7 +59,8 @@ public class ProyeccionTejeduria {
     public LocalDateTime getFechaCarga() { return fechaCarga; }
     public EstadoProyeccion getEstado() { return estado; }
 
-    public void reemplazar() { this.estado = EstadoProyeccion.REEMPLAZADA; }
+    /** Deja de ser la versión de la vigente; se puede seguir planificando (D-52). */
+    public void dejarDeSerVigente() { this.estado = EstadoProyeccion.CARGADA; }
     public void reactivar() { this.estado = EstadoProyeccion.VIGENTE; }
     public void marcarEliminada() { this.estado = EstadoProyeccion.ELIMINADA; }
 }

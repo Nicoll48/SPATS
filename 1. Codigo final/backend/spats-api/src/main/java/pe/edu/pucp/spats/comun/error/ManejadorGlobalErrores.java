@@ -41,7 +41,9 @@ public class ManejadorGlobalErrores extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(ConflictoException.class)
     ProblemDetail conflicto(ConflictoException ex) {
-        return problema(HttpStatus.CONFLICT, "Conflicto", ex);
+        ProblemDetail pd = problema(HttpStatus.CONFLICT, "Conflicto", ex);
+        ex.datos().forEach(pd::setProperty);
+        return pd;
     }
 
     @ExceptionHandler(ArchivoInvalidoException.class)

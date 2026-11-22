@@ -17,6 +17,7 @@ import pe.edu.pucp.spats.comun.error.ReglaNegocioException;
 import pe.edu.pucp.spats.comun.fecha.SemanaPlanificacion;
 import pe.edu.pucp.spats.incidencia.entity.EstadoIncidencia;
 import pe.edu.pucp.spats.incidencia.entity.Incidencia;
+import pe.edu.pucp.spats.incidencia.entity.TipoIncidencia;
 import pe.edu.pucp.spats.incidencia.repository.IncidenciaRepository;
 import pe.edu.pucp.spats.planificacion.entity.BolsaArticulo;
 import pe.edu.pucp.spats.planificacion.entity.PlanificacionPartida;
@@ -63,16 +64,43 @@ public class LectorDatosReplanificacion {
 
     @Transactional(readOnly = true)
     public EntradaReplanificacion leer(LocalDate lunes, List<Integer> idsIncidencias, Set<String> enMaquina) {
+        return leer(lunes, idsIncidencias, enMaquina, true, null, false);
+    }
+
+    /**
+     * Re-planificación desde hoy para deshacer una incidencia anulada (D-57): no exige incidencias; se vuelven a aplicar
+     * las de máquina y de complemento ya consideradas que siguen teniendo efecto desde hoy (las anuladas no) y las
+     * pendientes que se indiquen.
+     */
+    @Transactional(readOnly = true)
+    public EntradaReplanificacion leerPorAnulacion(LocalDate lunes, List<Integer> idsIncidencias, Set<String> enMaquina) {
+        return leer(lunes, idsIncidencias, enMaquina, false, null, true);
+    }
+
+    /**
+     * Re-planificación desde hoy para usar otra versión de la proyección como vigente (D-52): lo anterior a hoy se
+     * conserva de la vigente y desde hoy se decide con la proyección de esa versión. No exige incidencias. Las
+     * incidencias de máquina y de complemento ya consideradas en la semana que siguen teniendo efecto desde hoy se
+     * vuelven a aplicar; las PENDIENTE no (siguen pendientes).
+     */
+    @Transactional(readOnly = true)
+    public EntradaReplanificacion leerCambioVersion(LocalDate lunes, Integer idProyeccion, Set<String> enMaquina) {
+        return leer(lunes, List.of(), enMaquina, false, idProyeccion, false);
+    }
+
+    private EntradaReplanificacion leer(LocalDate lunes, List<Integer> idsIncidencias, Set<String> enMaquina,
+                                        boolean exigirIncidencias, Integer idProyeccion, boolean heredar) {
         LocalDate hoy = LocalDate.now(reloj);
         Semana semana = semanas.buscar(lunes).orElseThrow(ReglasReplanificacion::sinVigente);
         PlanificacionSemanal vigente = planificaciones.findBySemanaIdAndEsVigenteTrue(semana.getId())
                 .orElseThrow(ReglasReplanificacion::sinVigente);
         ReglasReplanificacion.exigirPermitida(vigente, new SemanaPlanificacion(lunes), hoy);
-        propuestas.exigirSinPendiente(semana.getId(), "re-planificar otra vez");
-        if (idsIncidencias.isEmpty())
+        propuestas.exigirSinPendiente(semana.getId(), idProyeccion == null ? "re-planificar otra vez" : "usar otra versión como vigente");
+        if (idsIncidencias.isEmpty() && exigirIncidencias)
             throw new ReglaNegocioException("SIN_INCIDENCIAS", "Selecciona al menos una incidencia pendiente para re-planificar.");
 
         List<IncidenciaAplicada> aplicadas = new ArrayList<>();
+        if (idProyeccion != null || heredar) aplicadas.addAll(heredadas(semana.getId(), hoy));
         for (Integer id : new LinkedHashSet<>(idsIncidencias)) {
             Incidencia i = incidencias.findById(id).orElseThrow(() -> new ReglaNegocioException("INCIDENCIA_NO_ENCONTRADA",
                     "No existe la incidencia " + id + "."));
@@ -87,7 +115,9 @@ public class LectorDatosReplanificacion {
                     i.getFechaHoraDisponibilidad(), i.getNuevaFechaEntrega()));
         }
 
-        EntradaPlanificacion base = lector.leerParaReplanificar(lunes);
+        // D-52: desde D se usa la proyección de la vigente, o la de la versión que pasará a ser vigente
+        EntradaPlanificacion base = lector.leerParaReplanificar(lunes,
+                idProyeccion != null ? idProyeccion : vigente.getProyeccion().getId());
         if (!vigente.getId().equals(base.idVigenteAnterior()))
             throw new ConflictoException("DATOS_CAMBIARON", "La planificación vigente cambió mientras se leía. Vuelve a intentarlo.");
         List<FilaVigente> filas = new ArrayList<>();
@@ -110,5 +140,23 @@ public class LectorDatosReplanificacion {
         advertencias.addAll(armado.advertencias());
         return new EntradaReplanificacion(entrada, hoy, armado.datos(), armado.alternativaVigente(), bolsa,
                 aplicadas.stream().map(IncidenciaAplicada::id).toList(), List.copyOf(advertencias));
+    }
+
+    /**
+     * Incidencias de máquina y de complemento ya consideradas en la semana cuya fecha prevista de disponibilidad es
+     * posterior al inicio de hoy: siguen teniendo efecto desde D (D-52). Los cambios de prioridad no se repiten: ya
+     * cambiaron la fecha de entrega del pedido al confirmarse (D-13b).
+     */
+    private List<IncidenciaAplicada> heredadas(Integer idSemana, LocalDate hoy) {
+        return incidencias.deLaSemana(idSemana).stream()
+                .filter(i -> i.getEstado() == EstadoIncidencia.CONSIDERADA)
+                .filter(i -> i.getTipoIncidencia() == TipoIncidencia.INCIDENCIA_MAQUINA
+                        || i.getTipoIncidencia() == TipoIncidencia.PROBLEMA_COMPLEMENTO)
+                .filter(i -> i.getFechaHoraDisponibilidad() != null && i.getFechaHoraDisponibilidad().isAfter(hoy.atStartOfDay()))
+                .map(i -> new IncidenciaAplicada(i.getId(), i.getTipoIncidencia(),
+                        i.getMaquina() == null ? null : i.getMaquina().getCodigo(),
+                        i.getPartida() == null ? null : i.getPartida().getNumeroPartida(), null,
+                        i.getFechaHoraDisponibilidad(), null, true))
+                .toList();
     }
 }

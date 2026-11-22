@@ -29,6 +29,7 @@ import pe.edu.pucp.spats.planificacion.repository.BolsaArticuloRepository;
 import pe.edu.pucp.spats.planificacion.repository.PlanificacionMaquinaRepository;
 import pe.edu.pucp.spats.planificacion.repository.PlanificacionPartidaRepository;
 import pe.edu.pucp.spats.planificacion.repository.PlanificacionSemanalRepository;
+import pe.edu.pucp.spats.tejeduria.entity.EstadoProyeccion;
 import pe.edu.pucp.spats.tejeduria.entity.ProyeccionTejeduria;
 import pe.edu.pucp.spats.tejeduria.entity.Semana;
 import pe.edu.pucp.spats.tejeduria.service.ProyeccionService;
@@ -36,7 +37,7 @@ import spats.algoritmo.salida.Indicadores;
 
 /**
  * Último paso de la generación: guarda todo el resultado en una sola transacción (RN-19). Si algo falla,
- * no queda ninguna versión parcial y la vigente sigue como estaba. La versión nueva pasa a vigente y la
+ * no queda ninguna versión parcial y la vigente sigue como estaba. Si la versión nueva pasa a vigente, la
  * anterior deja de serlo en la misma transacción (RN-22, D-14).
  */
 @Component
@@ -52,11 +53,24 @@ public class GuardadoPlanificacion {
     private final PropuestasPendientes propuestas;
     private final ReglasVigencia reglasVigencia;
     private final Clock reloj;
+    private final pe.edu.pucp.spats.planificacion.repository.PlanificacionIncidenciaRepository planificacionIncidencias;
+    private final pe.edu.pucp.spats.incidencia.repository.IncidenciaRepository incidencias;
+    private final pe.edu.pucp.spats.pedido.service.PedidoService pedidos;
+
+    private final pe.edu.pucp.spats.planificacion.recomendacion.RecomendacionesTejidoService recomendaciones;
 
     public GuardadoPlanificacion(PlanificacionSemanalRepository planificaciones, PlanificacionPartidaRepository partidas,
                                  PlanificacionMaquinaRepository maquinas, BolsaArticuloRepository bolsas,
                                  ProyeccionService proyecciones, EntityManager em, BitacoraService bitacora,
-                                 PropuestasPendientes propuestas, ReglasVigencia reglasVigencia, Clock reloj) {
+                                 PropuestasPendientes propuestas, ReglasVigencia reglasVigencia, Clock reloj,
+                                 pe.edu.pucp.spats.planificacion.repository.PlanificacionIncidenciaRepository planificacionIncidencias,
+                                 pe.edu.pucp.spats.incidencia.repository.IncidenciaRepository incidencias,
+                                 pe.edu.pucp.spats.pedido.service.PedidoService pedidos,
+            pe.edu.pucp.spats.planificacion.recomendacion.RecomendacionesTejidoService recomendaciones) {
+        this.recomendaciones = recomendaciones;
+        this.planificacionIncidencias = planificacionIncidencias;
+        this.incidencias = incidencias;
+        this.pedidos = pedidos;
         this.planificaciones = planificaciones;
         this.partidas = partidas;
         this.maquinas = maquinas;
@@ -69,29 +83,78 @@ public class GuardadoPlanificacion {
         this.reloj = reloj;
     }
 
+    /**
+     * Guarda la generación (D-52):
+     * <ul>
+     *   <li>Si la semana no tiene vigente, o se generó con la versión de la proyección de la vigente, la nueva pasa a
+     *       vigente y la anterior queda REEMPLAZADA (D-14); su versión de la proyección queda VIGENTE.</li>
+     *   <li>Si se generó con otra versión de la proyección, queda CANDIDATA: la vigente no cambia. La candidata
+     *       anterior de esa versión queda REEMPLAZADA (cada versión tiene a lo más una planificación en uso).</li>
+     * </ul>
+     */
     @Transactional
     public PlanificacionSemanal guardar(EntradaPlanificacion entrada, ResultadoTraducido r) {
         exigirDatosSinCambios(entrada);
         propuestas.eliminarVencidas(entrada.idSemana());
-        planificaciones.findBySemanaIdAndEsVigenteTrue(entrada.idSemana()).ifPresent(anterior -> {
+        PlanificacionSemanal vigente = planificaciones.findBySemanaIdAndEsVigenteTrue(entrada.idSemana()).orElse(null);
+        boolean candidata = vigente != null && !vigente.getProyeccion().getId().equals(entrada.idProyeccion());
+        ProyeccionTejeduria proyeccion = proyecciones.buscar(entrada.idProyeccion());
+        for (PlanificacionSemanal anterior : planificaciones.candidatasDe(entrada.idProyeccion())) {
             anterior.quitarVigencia(EstadoPlanificacion.REEMPLAZADA);
-            bitacora.registrarCambio("planificacion_semanal", anterior.getId(), "es_vigente", true, false);
+            bitacora.registrarCambio("planificacion_semanal", anterior.getId(), "estado", EstadoPlanificacion.CANDIDATA,
+                    EstadoPlanificacion.REEMPLAZADA);
+        }
+        if (vigente != null && !candidata) {
+            vigente.quitarVigencia(EstadoPlanificacion.REEMPLAZADA);
+            bitacora.registrarCambio("planificacion_semanal", vigente.getId(), "es_vigente", true, false);
             planificaciones.flush();   // libera uq_vigente_por_semana antes de insertar la nueva vigente
-        });
+        }
 
         Indicadores ind = r.indicadores();
-        PlanificacionSemanal plan = planificaciones.save(new PlanificacionSemanal(
-                em.getReference(Semana.class, entrada.idSemana()),
-                em.getReference(ProyeccionTejeduria.class, entrada.idProyeccion()),
-                planificaciones.ultimaVersion(entrada.idSemana()) + 1, LocalDateTime.now(reloj), TipoGeneracion.INICIAL,
-                decimal(ind.funcionObjetivo()), decimal(ind.desbalanceSemanal()), decimal(ind.desbalanceDiario()),
-                ind.lavados(), ind.evaluaciones(), ind.tiempoMs()));
+        Semana semana = em.getReference(Semana.class, entrada.idSemana());
+        int numero = planificaciones.ultimaVersion(entrada.idSemana()) + 1;
+        LocalDateTime ahora = LocalDateTime.now(reloj);
+        PlanificacionSemanal plan = planificaciones.save(candidata
+                ? PlanificacionSemanal.candidata(semana, proyeccion, numero, ahora, decimal(ind.funcionObjetivo()),
+                        decimal(ind.desbalanceSemanal()), decimal(ind.desbalanceDiario()), ind.lavados(), ind.evaluaciones(),
+                        ind.tiempoMs())
+                : new PlanificacionSemanal(semana, proyeccion, numero, ahora, TipoGeneracion.INICIAL,
+                        decimal(ind.funcionObjetivo()), decimal(ind.desbalanceSemanal()), decimal(ind.desbalanceDiario()),
+                        ind.lavados(), ind.evaluaciones(), ind.tiempoMs()));
 
         guardarFilas(plan, entrada, r);
-        reglasVigencia.marcarSemanaSiguiente(entrada.lunes());
+        if (!candidata) {
+            proyecciones.hacerVigente(proyeccion);
+            reglasVigencia.marcarSemanaSiguiente(entrada.lunes());
+            considerarIncidencias(plan, entrada.idsIncidencias());
+        }
+        // RF30 (D-56): tejido adicional de esta versión, con su propio resultado y en la misma transacción
+        recomendaciones.calcular(plan);
         bitacora.registrar(TipoOperacion.GENERAR, "planificacion_semanal", plan.getId(),
-                "Semana " + entrada.lunes() + ", versión " + plan.getNumeroVersion());
+                "Semana " + entrada.lunes() + ", versión " + plan.getNumeroVersion() + " con la proyección V"
+                        + proyeccion.getVersion() + (candidata ? " (no vigente; la vigente sigue siendo la versión "
+                        + vigente.getNumeroVersion() + ")" : ""));
         return plan;
+    }
+
+    /**
+     * Incidencias pendientes aplicadas al generar una semana que aún no empieza: se vinculan a la nueva vigente
+     * (RF54), pasan a CONSIDERADA y cada cambio de prioridad actualiza la fecha de entrega del pedido (D-13b).
+     */
+    private void considerarIncidencias(PlanificacionSemanal plan, List<Integer> ids) {
+        for (Integer id : ids) {
+            var i = incidencias.findById(id).orElse(null);
+            if (i == null) continue;
+            boolean pendiente = i.getEstado() == pe.edu.pucp.spats.incidencia.entity.EstadoIncidencia.PENDIENTE;
+            if (!pendiente && i.getEstado() != pe.edu.pucp.spats.incidencia.entity.EstadoIncidencia.CONSIDERADA) continue;
+            planificacionIncidencias.save(new pe.edu.pucp.spats.planificacion.entity.PlanificacionIncidencia(plan, i));
+            if (!pendiente) continue;   // ya considerada al generar antes la semana: solo se vincula a la versión nueva (D-57)
+            bitacora.registrarCambio("incidencia", i.getId(), "estado", i.getEstado(), "CONSIDERADA");
+            i.considerar();
+            if (i.getTipoIncidencia() == pe.edu.pucp.spats.incidencia.entity.TipoIncidencia.CAMBIO_PRIORIDAD
+                    && !java.util.Objects.equals(i.getPedido().getFechaEntrega(), i.getNuevaFechaEntrega()))
+                pedidos.cambiarFechaEntregaPorPrioridad(i.getPedido(), i.getNuevaFechaEntrega());
+        }
     }
 
     /** Filas de una versión: partidas (ubicadas y Bloqueadas), máquinas y bolsas. */
@@ -101,7 +164,7 @@ public class GuardadoPlanificacion {
                 partida(entrada, f.numeroPartida()), maquina(entrada, f.codigoMaquina()), f.diaAbastecimiento(),
                 f.ordenSecuencia(), f.clasificacion(), f.requiereLavado(), f.fechaDisponible())).toList());
         partidas.saveAll(r.bloqueadas().stream()
-                .map(numero -> PlanificacionPartida.bloqueada(plan, partida(entrada, numero))).toList());
+                .map(numero -> PlanificacionPartida.bloqueada(plan, partida(entrada, numero), r.motivosBloqueo().get(numero))).toList());
         maquinas.saveAll(r.maquinas().stream().map(m -> new PlanificacionMaquina(plan, maquina(entrada, m.codigoMaquina()),
                 m.objetivoAplicado(), m.minimoDiario(), m.maximoDiario(), m.asignadas(), m.sobrantes(), m.diferencia(),
                 m.lavados())).toList());
@@ -109,12 +172,15 @@ public class GuardadoPlanificacion {
                 b.fecha(), b.saldoInicial(), b.ingresados(), b.devueltos(), b.consumidos(), b.saldoFinal())).toList());
     }
 
-    /** La versión vigente y la proyección no deben haber cambiado desde la lectura de los datos. */
+    /**
+     * La versión vigente no debe haber cambiado desde la lectura de los datos, y la versión de la proyección usada
+     * debe seguir sin eliminar.
+     */
     void exigirDatosSinCambios(EntradaPlanificacion entrada) {
         Integer vigenteActual = planificaciones.findBySemanaIdAndEsVigenteTrue(entrada.idSemana())
                 .map(PlanificacionSemanal::getId).orElse(null);
-        Integer proyeccionActual = proyecciones.vigente(entrada.idSemana()).map(ProyeccionTejeduria::getId).orElse(null);
-        if (!Objects.equals(vigenteActual, entrada.idVigenteAnterior()) || !Objects.equals(proyeccionActual, entrada.idProyeccion()))
+        boolean proyeccionEliminada = proyecciones.buscar(entrada.idProyeccion()).getEstado() == EstadoProyeccion.ELIMINADA;
+        if (!Objects.equals(vigenteActual, entrada.idVigenteAnterior()) || proyeccionEliminada)
             throw new ConflictoException("DATOS_CAMBIARON",
                     "La planificación o la proyección de la semana cambiaron mientras se generaba. Vuelve a intentarlo.");
     }

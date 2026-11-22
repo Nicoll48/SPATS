@@ -2,9 +2,9 @@
 -- SPATS — Sistema de Planificación de Abastecimiento de Tintorería
 -- Script de creación de base de datos — PostgreSQL (base "tintoreria")
 --
--- Base: modelo físico del R3.3 con los dominios confirmados (22 tablas).
+-- Base: modelo físico del R3.3 con los dominios confirmados (23 tablas).
 -- Ejecutar conectado a la base "tintoreria" (psql o pgAdmin). El script
--- es re-ejecutable: primero elimina las 22 tablas y luego las crea.
+-- es re-ejecutable: primero elimina las 23 tablas y luego las crea.
 -- ¡Atención! Al eliminar las tablas se pierden todos los datos.
 --
 -- Cambios respecto del R3.3 (2026-10-25):
@@ -35,11 +35,19 @@
 --   * D-19 (2026-11-02): planificacion_semanal.stock_desactualizado.
 --   * D-20 (2026-11-02): CHECK con los dominios de los estados y de
 --     bitacora_auditoria.tipo_operacion; clasificacion_color C/B (D-07).
+--   * D-51 (2026-11-10): maquina_tonalidad_aceptada (nueva tabla) y
+--     planificacion_partida.motivo_bloqueo. Reemplaza la columna
+--     maquina_tintoreria.tonalidad_maxima de D-50.
+--   * D-52 (2026-11-11): versiones de la proyección de una semana.
+--     proyeccion_tejeduria.estado VIGENTE/CARGADA/ELIMINADA (CARGADA
+--     reemplaza a REEMPLAZADA); planificacion_semanal.estado suma
+--     CANDIDATA; bitacora_auditoria.tipo_operacion suma CAMBIAR_VIGENTE.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
 -- Eliminación de las tablas (orden inverso de dependencias)
 -- ---------------------------------------------------------------------
+DROP TABLE IF EXISTS recomendacion_tejido CASCADE;
 DROP TABLE IF EXISTS planificacion_incidencia CASCADE;
 DROP TABLE IF EXISTS incidencia CASCADE;
 DROP TABLE IF EXISTS bolsa_articulo CASCADE;
@@ -47,6 +55,7 @@ DROP TABLE IF EXISTS planificacion_maquina CASCADE;
 DROP TABLE IF EXISTS planificacion_partida CASCADE;
 DROP TABLE IF EXISTS planificacion_semanal CASCADE;
 DROP TABLE IF EXISTS indisponibilidad_maquina CASCADE;
+DROP TABLE IF EXISTS maquina_tonalidad_aceptada CASCADE;
 DROP TABLE IF EXISTS maquina_tintoreria CASCADE;
 DROP TABLE IF EXISTS detalle_proyeccion_tejeduria CASCADE;
 DROP TABLE IF EXISTS proyeccion_tejeduria CASCADE;
@@ -119,7 +128,8 @@ CREATE TABLE bitacora_auditoria (
                           'INICIAR_SESION', 'IMPORTAR', 'CREAR', 'MODIFICAR',
                           'GENERAR', 'INVALIDAR', 'CERRAR', 'COMPLETAR',
                           'REGISTRAR', 'RESTAURAR',
-                          'PROPONER', 'CONFIRMAR', 'DESCARTAR', 'ELIMINAR'
+                          'PROPONER', 'CONFIRMAR', 'DESCARTAR', 'ELIMINAR',
+                          'CAMBIAR_VIGENTE'
                       ))
 );
 
@@ -243,10 +253,15 @@ CREATE TABLE semana (
 
 -- ---------------------------------------------------------------------
 -- proyeccion_tejeduria
--- Cada carga de la proyección de una semana crea una versión nueva; la
--- de mayor número es la que se usa para planificar. Las anteriores se
--- conservan como historial (RF56). Una versión ELIMINADA se conserva con sus
--- registros para poder volver a ella, pero no se usa al planificar (D-46).
+-- Cada carga de la proyección de una semana crea una versión nueva (V1,
+-- V2, ...) y no cambia la planificación vigente (D-52). Cada versión puede
+-- tener su propia planificación.
+-- estado:
+--   VIGENTE   — la versión de la planificación vigente de la semana; si la
+--               semana no tiene vigente, la última cargada.
+--   CARGADA   — cualquier otra versión que se puede planificar.
+--   ELIMINADA — se conserva con sus registros para poder volver a ella,
+--               pero no se planifica (D-46).
 -- ---------------------------------------------------------------------
 CREATE TABLE proyeccion_tejeduria (
     id_proyeccion  SERIAL PRIMARY KEY,
@@ -255,7 +270,7 @@ CREATE TABLE proyeccion_tejeduria (
     fecha_carga    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     id_carga       INT REFERENCES carga_datos (id_carga) ON DELETE SET NULL,
     estado         VARCHAR(30) NOT NULL
-                   CHECK (estado IN ('VIGENTE', 'REEMPLAZADA', 'ELIMINADA'))
+                   CHECK (estado IN ('VIGENTE', 'CARGADA', 'ELIMINADA'))
 );
 
 -- ---------------------------------------------------------------------
@@ -283,6 +298,21 @@ CREATE TABLE maquina_tintoreria (
     barca                     VARCHAR(80),
     estado                    VARCHAR(30) NOT NULL
                               CHECK (estado IN ('OPERATIVA', 'INDISPONIBLE', 'EN_MANTENIMIENTO'))
+);
+
+-- ---------------------------------------------------------------------
+-- maquina_tonalidad_aceptada (D-51)
+-- Tonalidades que puede teñir cada máquina; el jefe de planeamiento las
+-- marca en Máquinas (por defecto, las cuatro). Una partida puede ir a
+-- una máquina de su misma capacidad (número de la barca) que acepte su
+-- tonalidad. La letra de la barca (C/B) es solo informativa. El backend
+-- exige al menos una tonalidad por máquina.
+-- ---------------------------------------------------------------------
+CREATE TABLE maquina_tonalidad_aceptada (
+    id_maquina  INT NOT NULL REFERENCES maquina_tintoreria (id_maquina) ON DELETE CASCADE,
+    tonalidad   VARCHAR(10) NOT NULL
+                CHECK (tonalidad IN ('BLANCO', 'CLARO', 'MEDIO', 'OSCURO')),
+    PRIMARY KEY (id_maquina, tonalidad)
 );
 
 -- ---------------------------------------------------------------------
@@ -314,6 +344,8 @@ CREATE TABLE indisponibilidad_maquina (
 --   INVALIDADA  — dejó de ser vigente porque cambió la proyección (D-06).
 --   PROPUESTA   — re-planificación pendiente de confirmar, no vigente
 --                 (D-13b); si se descarta se elimina (D-26).
+--   CANDIDATA   — generada con otra versión de la proyección, no vigente
+--                 (D-52). El planificador decide si la usa como vigente.
 -- stock_desactualizado (D-19): TRUE cuando, después de generar esta
 --   versión, cambió la planificación vigente de la semana anterior; su
 --   stock inicial ya no corresponde y se sugiere volver a generarla.
@@ -329,7 +361,7 @@ CREATE TABLE planificacion_semanal (
                                CHECK (tipo_generacion IN ('INICIAL', 'REPLANIFICACION')),
     fecha_cierre                TIMESTAMP,
     estado                      VARCHAR(30) NOT NULL
-                                CHECK (estado IN ('ABIERTA', 'CERRADA', 'REEMPLAZADA', 'INVALIDADA', 'PROPUESTA')),
+                                CHECK (estado IN ('ABIERTA', 'CERRADA', 'REEMPLAZADA', 'INVALIDADA', 'PROPUESTA', 'CANDIDATA')),
     stock_desactualizado        BOOLEAN NOT NULL DEFAULT FALSE,
     valor_funcion_objetivo      NUMERIC(12,3) CHECK (valor_funcion_objetivo >= 0),
     desbalance_semanal          NUMERIC(12,3) CHECK (desbalance_semanal >= 0),
@@ -368,6 +400,9 @@ CREATE TABLE planificacion_partida (
     clasificacion_resultado        VARCHAR(20) NOT NULL
                                    CHECK (clasificacion_resultado IN ('ASIGNADA', 'BLOQUEADA', 'SOBRANTE')),
     requiere_lavado_previo          BOOLEAN NOT NULL DEFAULT FALSE,
+    -- D-51: motivo por el que quedó BLOQUEADA (p. ej. «Ninguna máquina de su
+    -- capacidad acepta su tonalidad»); NULL en ASIGNADA y SOBRANTE.
+    motivo_bloqueo                  VARCHAR(120),
     fecha_disponible                DATE,
     estado_confirmacion_cierre       VARCHAR(20)
                                      CHECK (estado_confirmacion_cierre IN ('COMPLETADA', 'ARRASTRADA')),
@@ -438,6 +473,29 @@ CREATE TABLE bolsa_articulo (
 );
 
 -- ---------------------------------------------------------------------
+-- recomendacion_tejido (RF30, HU-13, D-56)
+-- Tejido adicional para la MISMA semana de una versión de planificación:
+-- qué tejer de más para llenar el espacio libre de su calendario. Una
+-- fila por componente que hay que tejer (partida, pedido-artículo por
+-- detalle_pedido, kg, día que llena y día de tejido). Se calcula con el
+-- resultado de esa versión al generarla o re-planificarla.
+-- ---------------------------------------------------------------------
+CREATE TABLE recomendacion_tejido (
+    id_recomendacion   SERIAL PRIMARY KEY,
+    id_planificacion   INT NOT NULL REFERENCES planificacion_semanal (id_planificacion) ON DELETE CASCADE,
+    id_maquina         INT NOT NULL REFERENCES maquina_tintoreria (id_maquina),
+    dia_llena          DATE NOT NULL,
+    id_partida         INT NOT NULL REFERENCES partida (id_partida),
+    id_detalle_pedido  INT NOT NULL REFERENCES detalle_pedido (id_detalle_pedido),
+    tipo_componente    VARCHAR(20) NOT NULL CHECK (tipo_componente IN ('PRINCIPAL', 'COMPLEMENTO')),
+    kg_a_tejer         NUMERIC(12,3) NOT NULL CHECK (kg_a_tejer > 0),
+    dia_tejido         DATE NOT NULL CHECK (dia_tejido < dia_llena),
+    fecha_entrega      DATE,
+    orden              INT NOT NULL CHECK (orden > 0)
+);
+CREATE INDEX ix_recomendacion_tejido_planificacion ON recomendacion_tejido (id_planificacion);
+
+-- ---------------------------------------------------------------------
 -- incidencia
 -- Exactamente una entidad afectada, la que corresponde a su tipo:
 --   INCIDENCIA_MAQUINA   → máquina, con fecha y hora prevista de
@@ -466,7 +524,7 @@ CREATE TABLE incidencia (
     fecha_hora_disponibilidad        TIMESTAMP,
     nueva_fecha_entrega              DATE,
     estado                           VARCHAR(30) NOT NULL
-                                     CHECK (estado IN ('PENDIENTE', 'CONSIDERADA')),
+                                     CHECK (estado IN ('PENDIENTE', 'CONSIDERADA', 'ATENDIDA', 'ANULADA')),
     CONSTRAINT ck_incidencia_entidad_exclusiva
         CHECK (num_nonnulls(id_pedido, id_partida, id_maquina) = 1),
     CONSTRAINT ck_incidencia_tipo_entidad CHECK (

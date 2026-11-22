@@ -20,6 +20,8 @@ export class ErrorApi extends Error {
   readonly problemas: ProblemaValidacion[]
   readonly errores: { campo: string; mensaje: string }[]
   readonly detalles: string[]
+  /** Cuerpo completo del problem+json, para propiedades propias de un código (p. ej. listas de partidas, D-51). */
+  readonly datos: Record<string, unknown>
 
   constructor(status: number, cuerpo: Record<string, unknown> | null) {
     super(typeof cuerpo?.detail === 'string' ? cuerpo.detail : mensajePorEstado(status))
@@ -28,6 +30,7 @@ export class ErrorApi extends Error {
     this.problemas = Array.isArray(cuerpo?.problemas) ? (cuerpo.problemas as ProblemaValidacion[]) : []
     this.errores = Array.isArray(cuerpo?.errores) ? (cuerpo.errores as { campo: string; mensaje: string }[]) : []
     this.detalles = Array.isArray(cuerpo?.detalles) ? (cuerpo.detalles as string[]) : []
+    this.datos = cuerpo ?? {}
   }
 }
 

@@ -201,7 +201,7 @@ class ReplanificacionMotorTest {
 
     // ------------------------------------------------------------- prueba 5
     @Test
-    @DisplayName("5a. RF55: si la vigente ya no es factible en el escenario nuevo, se propone la nueva")
+    @DisplayName("5a. RF55: si la vigente ya no es factible en la instancia nueva, se propone la nueva")
     void vigenteNoFactibleSeProponeLaNueva() {
         LocalDate D = lunes.plusDays(2);
         String maquina = maquinaConPartidasDesde(D);
@@ -225,6 +225,48 @@ class ReplanificacionMotorTest {
     }
 
     // ------------------------------------------------------------- apoyo
+    // ------------------------------------------------------------- D-51
+    @Test
+    @DisplayName("D-51. Quitar una tonalidad a una máquina: la vigente no cambia sola y al re-planificar desde D esas partidas ya no van a esa máquina")
+    void quitarTonalidadYReplanificar() {
+        LocalDate D = lunes.plusDays(2);
+        Map<String, Partida> porCodigo = new HashMap<>();
+        for (Partida p : datos.partidas()) porCodigo.put(p.codigo(), p);
+        // máquina y tonalidad con partidas ubicadas desde D en la vigente
+        FilaPartida afectada = vigenteTraducida.partidas().stream().filter(f -> !f.diaAbastecimiento().isBefore(D))
+                .findFirst().orElseThrow();
+        String maquina = afectada.codigoMaquina();
+        var tonalidad = porCodigo.get(afectada.numeroPartida()).tonalidad();
+        List<String> enEsaMaquina = vigenteTraducida.partidas().stream()
+                .filter(f -> f.codigoMaquina().equals(maquina) && !f.diaAbastecimiento().isBefore(D)
+                        && porCodigo.get(f.numeroPartida()).tonalidad() == tonalidad)
+                .map(FilaPartida::numeroPartida).toList();
+        assertThat(enEsaMaquina).isNotEmpty();
+
+        List<spats.algoritmo.entrada.Maquina> maquinas = datos.maquinas().stream().map(m -> {
+            if (!m.codigo().equals(maquina)) return m;
+            var aceptadas = java.util.EnumSet.allOf(spats.algoritmo.entrada.Tonalidad.class);
+            aceptadas.remove(tonalidad);
+            return new spats.algoritmo.entrada.Maquina(m.codigo(), m.capacidad(), m.tipo(), m.barca(), m.objetivoSemanal(), aceptadas);
+        }).toList();
+        DatosSemana cambiados = new DatosSemana(datos.parametros(), maquinas, datos.indisponibilidades(), datos.pedidos(),
+                datos.partidas(), datos.componentes(), datos.proyeccion(), datos.stockInicial());
+
+        List<FilaVigente> antes = filasVigente();
+        ArmadoReplanificacion.Armado a = ArmadoReplanificacion.armar(cambiados, D, antes, vigenteTraducida.bolsas(), List.of(), Set.of());
+        ResultadoPlanificacion n = new PlanificadorSemanal().planificar(a.datos(), new ParametrosACO());
+        ResultadoTraducido t = TraductorResultado.traducirReplanificacion(a.datos(), n, D, vigenteTraducida.bolsas());
+        Indicadores v = new PlanificadorSemanal().evaluar(a.datos(), a.alternativaVigente());
+
+        assertThat(filasVigente()).isEqualTo(antes);                      // la vigente no cambia sola
+        assertThat(v.factible()).isFalse();                               // con la configuración nueva, la vigente ya no vale
+        for (FilaPartida f : t.partidas())
+            if (f.codigoMaquina().equals(maquina) && !f.diaAbastecimiento().isBefore(D))
+                assertThat(porCodigo.get(f.numeroPartida()).tonalidad()).isNotEqualTo(tonalidad);
+        assertThat(antesDe(t.partidas(), D)).isEqualTo(antesDe(vigenteTraducida.partidas(), D));   // se conserva hasta D-1
+        RegresionInstanciasR22Test.verificarRestriccionesDeLaBase(t);
+    }
+
     record Corrida(ArmadoReplanificacion.Armado armado, ResultadoPlanificacion nueva, ResultadoTraducido traducido,
                    Indicadores evaluacionVigente) { }
 

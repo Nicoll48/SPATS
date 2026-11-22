@@ -18,5 +18,7 @@ public enum TipoOperacion {
     PROPONER,
     CONFIRMAR,
     DESCARTAR,
-    ELIMINAR
+    ELIMINAR,
+    /** D-52: otra versión de la planificación de la semana pasa a ser la vigente. */
+    CAMBIAR_VIGENTE
 }

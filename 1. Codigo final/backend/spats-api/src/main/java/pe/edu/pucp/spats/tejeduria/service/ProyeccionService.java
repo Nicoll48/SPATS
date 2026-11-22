@@ -32,50 +32,97 @@ import pe.edu.pucp.spats.tejeduria.repository.ProyeccionRepository;
 import spats.algoritmo.entrada.RegistroProyeccion;
 
 /**
- * Versiones de la proyección de tejeduría de cada semana (D-06). Cargar, corregir o restaurar la
- * proyección crea o cambia la versión vigente; las anteriores se conservan como historial (RF56).
+ * Versiones de la proyección de tejeduría de cada semana (D-52). Cargar o restaurar crea una versión nueva sin
+ * cambiar la planificación vigente; todas se conservan (RF56) y cada una se puede planificar aparte. Corregir un
+ * registro sí deja sin vigencia las planificaciones generadas con esa versión (D-06), con confirmación.
  */
 @Service
 @Transactional(readOnly = true)
 public class ProyeccionService {
+
+    /**
+     * Máximo de versiones no eliminadas de la proyección por semana: el calendario tiene 5 colores de versión y con
+     * más se repetirían. Para cargar otra hay que eliminar alguna (las eliminadas no cuentan).
+     */
+    public static final int MAXIMO_VERSIONES = 5;
 
     private final ProyeccionRepository proyecciones;
     private final DetalleProyeccionRepository detalles;
     private final SemanaService semanas;
     private final ApplicationEventPublisher eventos;
     private final BitacoraService bitacora;
+    private final PlanificacionesDeLaSemana planificaciones;
     private final Clock reloj;
 
     public ProyeccionService(ProyeccionRepository proyecciones, DetalleProyeccionRepository detalles,
                              SemanaService semanas, ApplicationEventPublisher eventos, BitacoraService bitacora,
-                             Clock reloj) {
+                             PlanificacionesDeLaSemana planificaciones, Clock reloj) {
         this.proyecciones = proyecciones;
         this.detalles = detalles;
         this.semanas = semanas;
         this.eventos = eventos;
         this.bitacora = bitacora;
+        this.planificaciones = planificaciones;
         this.reloj = reloj;
     }
 
     public record NuevoDetalle(DetallePedido detallePedido, LocalDate fechaProyectada, BigDecimal kg) { }
 
-    /** Registra una versión nueva de la proyección de la semana; pasa a ser la vigente. */
+    /**
+     * Registra una versión nueva de la proyección de la semana (D-52). No cambia la planificación vigente: si la
+     * semana tiene una, la versión nueva queda CARGADA y se planifica aparte; si no, pasa a ser la VIGENTE (la que
+     * se usa por omisión al generar). No se carga en una semana cerrada: sus versiones quedan en solo lectura.
+     */
     @Transactional(propagation = Propagation.MANDATORY)
-    public ProyeccionTejeduria registrarVersion(LocalDate lunes, List<NuevoDetalle> nuevos, boolean confirmado,
-                                                TipoOperacion operacion, String detalleBitacora, Integer idCarga) {
+    public ProyeccionTejeduria registrarVersion(LocalDate lunes, List<NuevoDetalle> nuevos, TipoOperacion operacion,
+                                                String detalleBitacora, Integer idCarga) {
         Semana semana = semanas.obtenerOCrear(lunes);
-        eventos.publishEvent(new ProyeccionPorCambiarEvent(semana.getId(), semana.getFechaInicio(), confirmado));
-        vigente(semana.getId()).ifPresent(ProyeccionTejeduria::reemplazar);
+        planificaciones.exigirSemanaAbierta(semana.getId());
+        if (noEliminadas(semana.getId()).size() >= MAXIMO_VERSIONES)
+            throw new ReglaNegocioException("MAXIMO_VERSIONES_PROYECCION", "La semana ya tiene " + MAXIMO_VERSIONES
+                    + " versiones de la proyección, el máximo. Para cargar otra, elimina alguna versión en Carga de datos.");
+        boolean conVigente = planificaciones.tieneVigente(semana.getId());
         int version = proyecciones.findFirstBySemanaIdOrderByVersionDesc(semana.getId()).map(p -> p.getVersion() + 1).orElse(1);
         ProyeccionTejeduria nueva = new ProyeccionTejeduria(semana, version, LocalDateTime.now(reloj));
+        if (conVigente) nueva.dejarDeSerVigente();
+        else proyecciones.findBySemanaIdAndEstadoOrderByVersionDesc(semana.getId(), EstadoProyeccion.VIGENTE)
+                .forEach(ProyeccionTejeduria::dejarDeSerVigente);
         nueva.asociarCarga(idCarga);
         ProyeccionTejeduria proyeccion = proyecciones.save(nueva);
         detalles.saveAll(nuevos.stream()
                 .map(n -> new DetalleProyeccionTejeduria(proyeccion, n.detallePedido(), n.fechaProyectada(), n.kg()))
                 .toList());
         bitacora.registrar(operacion, "proyeccion_tejeduria", proyeccion.getId(),
-                "Semana " + lunes + ", versión " + version + (detalleBitacora == null ? "" : " — " + detalleBitacora));
+                "Semana " + lunes + ", versión V" + version + (detalleBitacora == null ? "" : " — " + detalleBitacora)
+                        + (conVigente ? " (la planificación vigente no cambia)" : ""));
         return proyeccion;
+    }
+
+    /**
+     * La versión pasa a ser la de la planificación vigente (D-52) y la que lo era queda CARGADA. La llama el módulo
+     * de planificación cuando cambia su vigente.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void hacerVigente(ProyeccionTejeduria version) {
+        if (version.getEstado() == EstadoProyeccion.VIGENTE) return;
+        for (ProyeccionTejeduria otra : proyecciones.findBySemanaIdAndEstadoOrderByVersionDesc(version.getSemana().getId(),
+                EstadoProyeccion.VIGENTE)) {
+            otra.dejarDeSerVigente();
+            bitacora.registrarCambio("proyeccion_tejeduria", otra.getId(), "estado", EstadoProyeccion.VIGENTE, EstadoProyeccion.CARGADA);
+        }
+        bitacora.registrarCambio("proyeccion_tejeduria", version.getId(), "estado", version.getEstado(), EstadoProyeccion.VIGENTE);
+        version.reactivar();
+    }
+
+    /** Versión que se puede planificar en la semana: es de esa semana y no está eliminada. */
+    public ProyeccionTejeduria planificable(Integer idSemana, Integer idProyeccion) {
+        ProyeccionTejeduria p = buscar(idProyeccion);
+        if (!p.getSemana().getId().equals(idSemana))
+            throw new ReglaNegocioException("PROYECCION_DE_OTRA_SEMANA", "La versión V" + p.getVersion() + " es de otra semana.");
+        if (p.getEstado() == EstadoProyeccion.ELIMINADA)
+            throw new ReglaNegocioException("PROYECCION_ELIMINADA", "La versión V" + p.getVersion()
+                    + " está eliminada. Vuelve a ella en Carga de datos antes de planificarla.");
+        return p;
     }
 
     public List<VersionProyeccionResponse> versiones(LocalDate lunes) {
@@ -83,8 +130,16 @@ public class ProyeccionService {
                 .map(this::aResponse).toList()).orElse(List.of());
     }
 
+    /** La versión VIGENTE de la semana (D-52); si ninguna lo está, la última no eliminada. */
     public Optional<ProyeccionTejeduria> vigente(Integer idSemana) {
-        return proyecciones.findFirstBySemanaIdAndEstadoNotOrderByVersionDesc(idSemana, EstadoProyeccion.ELIMINADA);
+        return proyecciones.findBySemanaIdAndEstadoOrderByVersionDesc(idSemana, EstadoProyeccion.VIGENTE).stream().findFirst()
+                .or(() -> proyecciones.findFirstBySemanaIdAndEstadoNotOrderByVersionDesc(idSemana, EstadoProyeccion.ELIMINADA));
+    }
+
+    /** Versiones no eliminadas de la semana, de la más antigua a la más nueva (V1, V2, ...). */
+    public List<ProyeccionTejeduria> noEliminadas(Integer idSemana) {
+        return proyecciones.findBySemanaIdOrderByVersionDesc(idSemana).reversed().stream()
+                .filter(p -> p.getEstado() != EstadoProyeccion.ELIMINADA).toList();
     }
 
     public List<DetalleProyeccionResponse> detalle(Integer idProyeccion) {
@@ -101,32 +156,32 @@ public class ProyeccionService {
         return detalles.deLaProyeccion(idProyeccion);
     }
 
-    /** Corrección manual de un registro de la proyección vigente (RF13). Deja sin vigencia la planificación que la usó. */
+    /** Corrección manual de un registro de la proyección vigente (RF13). Deja sin vigencia las planificaciones que la usaron. */
     @Transactional
     public DetalleProyeccionResponse modificarDetalle(Integer id, ModificarDetalleProyeccionRequest s, boolean confirmado) {
         DetalleProyeccionTejeduria d = detalles.findById(id).orElseThrow(() -> new RecursoNoEncontradoException(
                 "DETALLE_PROYECCION_NO_ENCONTRADO", "No existe el registro de proyección indicado."));
         ProyeccionTejeduria p = d.getProyeccion();
         if (p.getEstado() != EstadoProyeccion.VIGENTE)
-            throw new ReglaNegocioException("PROYECCION_REEMPLAZADA",
-                    "Solo se corrige la versión vigente de la proyección. Para volver a una anterior, restáurala.");
-        eventos.publishEvent(new ProyeccionPorCambiarEvent(p.getSemana().getId(), p.getSemana().getFechaInicio(), confirmado));
+            throw new ReglaNegocioException("PROYECCION_NO_VIGENTE",
+                    "Solo se corrige la versión vigente de la proyección. Para cambiar otra, carga una versión nueva.");
+        eventos.publishEvent(new ProyeccionPorCambiarEvent(p.getSemana().getId(), p.getSemana().getFechaInicio(), p.getId(), confirmado));
         bitacora.registrarCambio("detalle_proyeccion_tejeduria", id, "fecha_proyectada", d.getFechaProyectada(), s.fechaProyectada());
         bitacora.registrarCambio("detalle_proyeccion_tejeduria", id, "kg_proyectados", d.getKgProyectados(), s.kgProyectados());
         d.modificar(s.fechaProyectada(), s.kgProyectados());
         return detalle(p.getId()).stream().filter(x -> x.id().equals(id)).findFirst().orElseThrow();
     }
 
-    /** Elimina un registro de la proyección vigente. Deja sin vigencia la planificación que la usó, como una corrección. */
+    /** Elimina un registro de la proyección vigente. Deja sin vigencia las planificaciones que la usaron, como una corrección. */
     @Transactional
     public void eliminarDetalle(Integer id, boolean confirmado) {
         DetalleProyeccionTejeduria d = detalles.findById(id).orElseThrow(() -> new RecursoNoEncontradoException(
                 "DETALLE_PROYECCION_NO_ENCONTRADO", "No existe el registro de proyección indicado."));
         ProyeccionTejeduria p = d.getProyeccion();
         if (p.getEstado() != EstadoProyeccion.VIGENTE)
-            throw new ReglaNegocioException("PROYECCION_REEMPLAZADA",
+            throw new ReglaNegocioException("PROYECCION_NO_VIGENTE",
                     "Solo se elimina de la versión vigente de la proyección.");
-        eventos.publishEvent(new ProyeccionPorCambiarEvent(p.getSemana().getId(), p.getSemana().getFechaInicio(), confirmado));
+        eventos.publishEvent(new ProyeccionPorCambiarEvent(p.getSemana().getId(), p.getSemana().getFechaInicio(), p.getId(), confirmado));
         bitacora.registrar(TipoOperacion.ELIMINAR, "detalle_proyeccion_tejeduria", id,
                 "Semana " + p.getSemana().getFechaInicio() + ", versión " + p.getVersion() + ": " + d.getFechaProyectada() + ", " + d.getKgProyectados() + " kg");
         detalles.delete(d);
@@ -162,22 +217,31 @@ public class ProyeccionService {
         return versiones.stream().map(ProyeccionTejeduria::getIdCarga).filter(Objects::nonNull).toList();
     }
 
-    /** Vuelve a una versión anterior: copia sus registros en una versión nueva, que pasa a vigente (D-06). */
+    /**
+     * Vuelve a una versión anterior: copia sus registros en una versión nueva (D-06). Como cualquier carga, no
+     * cambia la planificación vigente (D-52).
+     */
     @Transactional
-    public VersionProyeccionResponse restaurar(Integer idProyeccion, boolean confirmado) {
+    public VersionProyeccionResponse restaurar(Integer idProyeccion) {
         ProyeccionTejeduria origen = buscar(idProyeccion);
         if (origen.getEstado() == EstadoProyeccion.VIGENTE)
             throw new ReglaNegocioException("PROYECCION_YA_VIGENTE", "Esa versión ya es la vigente.");
         List<NuevoDetalle> copia = detalles.deLaProyeccion(idProyeccion).stream()
                 .map(d -> new NuevoDetalle(d.getDetallePedido(), d.getFechaProyectada(), d.getKgProyectados())).toList();
-        ProyeccionTejeduria nueva = registrarVersion(origen.getSemana().getFechaInicio(), copia, confirmado,
-                TipoOperacion.RESTAURAR, "copia de la versión " + origen.getVersion(), null);
+        ProyeccionTejeduria nueva = registrarVersion(origen.getSemana().getFechaInicio(), copia,
+                TipoOperacion.RESTAURAR, "copia de la versión V" + origen.getVersion(), null);
         return aResponse(nueva);
     }
 
     public ProyeccionTejeduria buscar(Integer id) {
         return proyecciones.findById(id).orElseThrow(() -> new RecursoNoEncontradoException(
                 "PROYECCION_NO_ENCONTRADA", "No existe la proyección indicada."));
+    }
+
+    /** Kilos totales de una versión. */
+    public BigDecimal kgTotales(Integer idProyeccion) {
+        return detalles.deLaProyeccion(idProyeccion).stream().map(DetalleProyeccionTejeduria::getKgProyectados)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private VersionProyeccionResponse aResponse(ProyeccionTejeduria p) {

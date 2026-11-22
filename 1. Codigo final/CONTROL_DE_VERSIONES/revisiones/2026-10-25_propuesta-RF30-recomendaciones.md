@@ -46,3 +46,4 @@ En la interfaz se mostraría dentro de la pestaña **Alertas**, junto a cada bar
 1. ¿El déficit se agrupa por **barca** (propuesto) o por **máquina**?
 2. ¿Se recomiendan también las partidas sin ningún kilo en la semana, o solo las Bloqueadas?
 3. ¿Hace falta una fecha límite de tejido? Para abastecer el lunes, lo tejido tiene que estar listo el sábado anterior.
+

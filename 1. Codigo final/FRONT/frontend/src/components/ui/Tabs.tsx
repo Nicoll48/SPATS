@@ -17,9 +17,8 @@ interface TabsProps {
 
 /**
  * Pestañas internas de una página (no son rutas propias — ver la nota en
- * navigation.ts). Se usa para "Pestañas internas" de Planificación semanal
- * y Escenarios, y para las vistas alternativas de Proyección de
- * planificación, escenarios e historial.
+ * navigation.ts). Se usa para las pestañas internas de Planificación
+ * semanal, Datos registrados e Historial.
  */
 export function Tabs({ tabs, activeId, onChange, wrap = false }: TabsProps) {
   return (

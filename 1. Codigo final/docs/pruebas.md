@@ -17,6 +17,8 @@ mvn test        # algoritmo (34 + 20) + API
 | `DominioComunTest` | Semana lunes a domingo, ventana de la proyección, indisponibilidad parcial (D-08) y barca (D-07). |
 | `PermisosPorPerfilTest` | 401 sin sesión, Consulta lee pero recibe 403 al modificar, Planificador modifica, 400 con errores por campo. |
 | `FlujoPlanificacionIntegracionTest` | Flujo completo contra **PostgreSQL** (ver abajo). |
+| `VersionesProyeccionIntegracionTest` | D-52 contra **PostgreSQL**, con el reloj en el viernes 04/09/2026 (semana 37 sin empezar): subir una versión sin tocar la vigente, generarla sin volverla vigente (CANDIDATA, no se exporta, no marca N+1), usarla como vigente (cambio directo, marca N+1, se puede volver) y, al cerrar, rechazar subir, generar y cambiar la vigente. |
+| `VersionesProyeccionSemanaIniciadaIntegracionTest` | D-52 contra **PostgreSQL**, con el reloj en el miércoles 16/09/2026: usar otra versión como vigente con la semana empezada deja una propuesta; al confirmarla, lo anterior a hoy es idéntico, la candidata queda REEMPLAZADA y la versión de la proyección pasa a VIGENTE. |
 | `ReplanificacionIntegracionTest` | Prueba 6 contra **PostgreSQL**, con el reloj en el miércoles 16/09/2026: proponer, bloqueos mientras hay propuesta, descartar (sin filas, incidencias PENDIENTE) y confirmar (vigente nueva, REEMPLAZADA, CONSIDERADA, `fecha_entrega` y bitácora). |
 
 ### Prueba de integración con PostgreSQL
@@ -28,7 +30,7 @@ createdb -U postgres tintoreria_test
 $env:SPATS_TEST_DB_URL="jdbc:postgresql://localhost:5432/tintoreria_test"
 $env:SPATS_TEST_DB_USUARIO="postgres"
 $env:SPATS_TEST_DB_CONTRASENA="<contraseña>"
-mvn -pl spats-api -am test "-Dtest=FlujoPlanificacionIntegracionTest,ReplanificacionIntegracionTest" -Dsurefire.failIfNoSpecifiedTests=false
+mvn -pl spats-api -am test "-Dtest=FlujoPlanificacionIntegracionTest,ReplanificacionIntegracionTest,VersionesProyeccion*IntegracionTest" -Dsurefire.failIfNoSpecifiedTests=false
 ```
 
 Recorre el flujo completo:
@@ -37,7 +39,7 @@ Recorre el flujo completo:
 2. Genera la 37 desde la base, con el mismo F que el R2.3 (1279.75).
 3. Genera la 38 encadenada con el saldo de las bolsas.
 4. Vuelve a generar la 37: hay versiones y queda una sola vigente.
-5. Carga una proyección nueva de la 38: exige confirmación y deja su planificación sin vigencia.
+5. Carga una proyección nueva de la 38: crea la V2 y su planificación vigente no cambia (D-52).
 6. Cierra la 37: completadas, arrastradas y bloqueadas sin cambios.
 7. Completa una arrastrada.
 
@@ -47,4 +49,5 @@ Recorre el flujo completo:
 cd FRONT/frontend
 npm run build   # tsc + Vite
 npm run lint    # oxlint sobre src/
+npm test        # node --test: casos a, b, c y d de la comparación de versiones (tests/versiones.test.ts)
 ```

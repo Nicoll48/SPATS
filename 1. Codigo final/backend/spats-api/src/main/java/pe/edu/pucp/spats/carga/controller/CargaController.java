@@ -47,9 +47,8 @@ public class CargaController {
     @PostMapping(value = "/cargas/{tipo}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     public CargaResponse importar(@PathVariable TipoDato tipo, @RequestPart("archivo") MultipartFile archivo,
-                                  @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate semana,
-                                  @RequestParam(defaultValue = "false") boolean confirmado) {
-        return cargas.importar(tipo, archivo, semana, confirmado);
+                                  @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate semana) {
+        return cargas.importar(tipo, archivo, semana);
     }
 
     @GetMapping("/cargas")

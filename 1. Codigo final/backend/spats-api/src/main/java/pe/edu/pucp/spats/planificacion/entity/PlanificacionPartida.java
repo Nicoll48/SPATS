@@ -57,6 +57,10 @@ public class PlanificacionPartida {
     @Column(name = "requiere_lavado_previo", nullable = false)
     private boolean requiereLavadoPrevio;
 
+    /** D-51: motivo de una BLOQUEADA, p. ej. «Ninguna máquina de su capacidad acepta su tonalidad». */
+    @Column(name = "motivo_bloqueo", length = 120)
+    private String motivoBloqueo;
+
     @Column(name = "fecha_disponible")
     private LocalDate fechaDisponible;
 
@@ -82,13 +86,17 @@ public class PlanificacionPartida {
         return p;
     }
 
-    public static PlanificacionPartida bloqueada(PlanificacionSemanal planificacion, Partida partida) {
+    /** @param motivo motivo del algoritmo (D-51), recortado a 120 caracteres; puede ser null */
+    public static PlanificacionPartida bloqueada(PlanificacionSemanal planificacion, Partida partida, String motivo) {
         PlanificacionPartida p = new PlanificacionPartida();
         p.planificacion = planificacion;
         p.partida = partida;
         p.clasificacionResultado = ClasificacionResultado.BLOQUEADA;
+        p.motivoBloqueo = motivo == null ? null : motivo.length() > 120 ? motivo.substring(0, 120) : motivo;
         return p;
     }
+
+    public String getMotivoBloqueo() { return motivoBloqueo; }
 
     public Integer getId() { return id; }
     public PlanificacionSemanal getPlanificacion() { return planificacion; }

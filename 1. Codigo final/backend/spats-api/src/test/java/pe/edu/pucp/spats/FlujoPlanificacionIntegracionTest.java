@@ -65,6 +65,8 @@ class FlujoPlanificacionIntegracionTest {
         try (Connection c = DriverManager.getConnection(url, usuario, contrasena); Statement s = c.createStatement()) {
             s.execute(Files.readString(BD.resolve("BD.sql"), StandardCharsets.UTF_8));
             s.execute(Files.readString(BD.resolve("datos_iniciales.sql"), StandardCharsets.UTF_8));
+            // D-51: datos_iniciales trae el parque oficial; el perfil demo carga el parque del R2.2 solo si no hay máquinas
+            s.execute("DELETE FROM maquina_tonalidad_aceptada; DELETE FROM maquina_tintoreria;");
         }
         registro.add("spring.datasource.url", () -> url);
         registro.add("spring.datasource.username", () -> usuario);
@@ -125,14 +127,13 @@ class FlujoPlanificacionIntegracionTest {
                 Boolean.class, v2.idPlanificacion())).isFalse();
         assertThatThrownBy(() -> cierre.cerrar(s38.idPlanificacion(), List.of())).isInstanceOf(ConflictoException.class);
 
-        // 4. Una proyección nueva de la 38 exige confirmación y deja sin vigencia su planificación (D-06)
+        // 4. Una proyección nueva de la 38 crea la V2 sin tocar su planificación vigente (D-52, antes D-06)
         byte[] proyeccion38 = plantillas.exportar(TipoDato.PROYECCION_TEJEDURIA, S38).contenido();
         MockMultipartFile archivo = new MockMultipartFile("archivo", "proyeccion_38.xlsx", "application/octet-stream", proyeccion38);
-        assertThatThrownBy(() -> cargas.importar(TipoDato.PROYECCION_TEJEDURIA, archivo, S38, false))
-                .isInstanceOf(ConflictoException.class);
-        cargas.importar(TipoDato.PROYECCION_TEJEDURIA, archivo, S38, true);
-        assertThat(consulta.estadoSemana(S38).planificacionVigente()).isNull();
-        assertThat(consulta.versiones(S38)).extracting(v -> v.estado()).containsExactly(EstadoPlanificacion.INVALIDADA);
+        cargas.importar(TipoDato.PROYECCION_TEJEDURIA, archivo, S38);
+        assertThat(consulta.estadoSemana(S38).planificacionVigente().id()).isEqualTo(s38.idPlanificacion());
+        assertThat(consulta.estadoSemana(S38).proyeccionDesactualizada()).isTrue();
+        assertThat(consulta.versiones(S38)).extracting(v -> v.estado()).containsExactly(EstadoPlanificacion.ABIERTA);
 
         // 5. Cierre de la 37: confirmadas → COMPLETADA, resto → ARRASTRADA, bloqueadas siguen PENDIENTE
         PlanificacionDetalleResponse vigente37 = consulta.vigente(S37);
@@ -152,7 +153,7 @@ class FlujoPlanificacionIntegracionTest {
         // 6. Las arrastradas no vuelven a planificarse; una se marca completada (RF49)
         cierre.completarArrastrada(cierre.arrastradas().getFirst().numeroPartida());
         assertThat(cierre.arrastradas()).hasSize(2);
-        assertThat(contar("select count(*) from bitacora_auditoria where tipo_operacion in ('GENERAR','CERRAR','INVALIDAR')")).isGreaterThanOrEqualTo(5);
+        assertThat(contar("select count(*) from bitacora_auditoria where tipo_operacion in ('GENERAR','CERRAR','IMPORTAR')")).isGreaterThanOrEqualTo(5);
     }
 
     private int contar(String sql, Object... args) {

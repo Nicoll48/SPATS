@@ -37,13 +37,14 @@ import spats.algoritmo.entrada.StockArticulo;
  *   <li>Tela: se acumula por artículo ("bolsa"), sin importar el pedido para el que se tejió.
  *       Cada bolsa parte con el stock en almacén y recibe cada día la tela que tejeduría deja
  *       disponible.</li>
- *   <li>Partidas: se consideran las pendientes. Son candidatas las que tienen una máquina de su
- *       barca y cuyos requerimientos caben en la tela total de la semana; el resto queda bloqueada.</li>
+ *   <li>Partidas: se consideran las pendientes. Son candidatas las que tienen alguna máquina compatible
+ *       ({@link Compatibilidad}: misma capacidad que el número de su barca y que acepte su tonalidad, D-51) y
+ *       cuyos requerimientos caben en la tela total de la semana; el resto queda bloqueada.</li>
  *   <li>Re-planificación desde el día D ({@link Replanificacion}): las fijas y las conservadas entran a la
  *       instancia sin requerimientos de tela. El stock inicial es el saldo al iniciar el día D, más la tela
  *       de las conservadas que ya no tienen día hábil (vuelve a la bolsa). La tela de las fijas conformadas
  *       el día D sale de la bolsa ese día, después de sumar lo que llega. Desde D, cada partida solo va a
- *       máquinas de su barca con algún día hábil desde que puede ubicarse.</li>
+ *       máquinas compatibles con algún día hábil desde que puede ubicarse.</li>
  * </ul>
  */
 public final class ConstructorInstancia {
@@ -174,9 +175,6 @@ public final class ConstructorInstancia {
         }
         if (maxEntrega == null) maxEntrega = I.dias[I.ND - 1];
 
-        Set<String> barcas = new HashSet<>();
-        for (Maquina m : I.maquinas) barcas.add(m.barca().trim());
-
         List<Partida> pendientes = new ArrayList<>();
         for (Partida p : datos.partidas()) if (p.estado() == EstadoPartida.PENDIENTE) pendientes.add(p);
         pendientes.sort(Comparator.comparingInt(Partida::ordenRegistro));
@@ -192,8 +190,8 @@ public final class ConstructorInstancia {
                 else conservadas.add(p);
                 continue;
             }
-            if (!barcas.contains(p.barca().trim())) { I.excluidas.add(new PartidaExcluida(p, PartidaExcluida.SIN_MAQUINA)); continue; }
-            if (rep != null && !tieneDiaHabil(I, p.barca(), rep.desdeDe(p.codigo(), I.diaInicio))) {
+            if (!hayCompatible(I, p)) { I.excluidas.add(new PartidaExcluida(p, PartidaExcluida.SIN_MAQUINA_COMPATIBLE)); continue; }
+            if (rep != null && !tieneDiaHabil(I, p, rep.desdeDe(p.codigo(), I.diaInicio))) {
                 I.excluidas.add(new PartidaExcluida(p, PartidaExcluida.SIN_DIA_DISPONIBLE));
                 continue;
             }
@@ -249,7 +247,7 @@ public final class ConstructorInstancia {
             }
             List<Integer> cm = new ArrayList<>();
             for (int m = 0; m < I.M; m++)
-                if (I.maquinas[m].barca().trim().equals(x.barca().trim())
+                if (Compatibilidad.compatible(I.maquinas[m], x)
                         && (rep == null || (I.desde[p] <= I.ND && I.sigHabil[m][I.desde[p]] > 0))) cm.add(m);
             I.compat[p] = cm.stream().mapToInt(Integer::intValue).toArray();
             if (p < nDecidibles) I.R += req.getOrDefault(x.codigo(), Map.of()).size();
@@ -325,7 +323,7 @@ public final class ConstructorInstancia {
             r.conservadas.put(c.partida(), c);
             int desde = Math.max(I.diaInicio, (int) ChronoUnit.DAYS.between(I.dias[0], c.ubicableDesde()) + 1);
             r.desde.merge(c.partida(), desde, Math::max);
-            if (!tieneDiaHabil(I, p.barca(), r.desdeDe(c.partida(), I.diaInicio))) {   // su tela vuelve a la bolsa el día D
+            if (!tieneDiaHabil(I, p, r.desdeDe(c.partida(), I.diaInicio))) {   // su tela vuelve a la bolsa el día D
                 r.devueltas.add(c.partida());
                 req.getOrDefault(c.partida(), Map.of()).forEach((clave, kg) -> r.devolucion.merge(clave, kg, Double::sum));
             }
@@ -340,11 +338,17 @@ public final class ConstructorInstancia {
         return p;
     }
 
-    /** true si alguna máquina de la barca tiene un día hábil desde el día {@code desde} (base 1). */
-    private static boolean tieneDiaHabil(InstanciaSemana I, String barca, int desde) {
+    /** true si alguna máquina compatible con la partida (D-51) está registrada. */
+    private static boolean hayCompatible(InstanciaSemana I, Partida p) {
+        for (Maquina m : I.maquinas) if (Compatibilidad.compatible(m, p)) return true;
+        return false;
+    }
+
+    /** true si alguna máquina compatible con la partida tiene un día hábil desde el día {@code desde} (base 1). */
+    private static boolean tieneDiaHabil(InstanciaSemana I, Partida p, int desde) {
         if (desde > I.ND) return false;
         for (int m = 0; m < I.M; m++)
-            if (I.maquinas[m].barca().trim().equals(barca.trim()) && I.sigHabil[m][Math.max(1, desde)] > 0) return true;
+            if (Compatibilidad.compatible(I.maquinas[m], p) && I.sigHabil[m][Math.max(1, desde)] > 0) return true;
         return false;
     }
 

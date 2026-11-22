@@ -21,7 +21,7 @@ El script corre en paralelo con todos los núcleos menos uno. Cada corrida se gu
 | `R/00_configuracion.R` | Parámetros: máquinas (barcas), objetivo semanal, pesos de la función objetivo, presupuesto, parámetros del AG y del ACO |
 | `R/01_preparar_datos.R` | Lee `PARTIDAS.xlsx`, `PROG_SETIEMBRE.xlsx` y `PROG_TEJIDO.xlsx` y arma pedidos, partidas, componentes y proyección |
 | `R/02_instancias.R` | Construye una semana (bolsas de tela, partidas candidatas y bloqueadas) y la memoria que pasa a la semana siguiente |
-| `R/03_modelo.R` | Simulación día a día de la conformación, calendario 2–3 partidas por día, función objetivo y validador |
+| `R/03_modelo.R` | Simulación día a día de la conformación, calendario (reparto proporcional y escalonado, D-48), función objetivo y validador |
 | `R/04_algoritmos.R` | Regla voraz (línea base), algoritmo genético y colonia de hormigas |
 | `R/05_construir_instancias.R` | Semanas S37, S38 y S39 con las condiciones B, I, R e IR |
 | `R/06_experimento.R` | 20 corridas por algoritmo e instancia con el mismo presupuesto |
@@ -38,7 +38,7 @@ El script corre en paralelo con todos los núcleos menos uno. Cada corrida se gu
 
 **Segunda decisión: a qué máquina va.** Cada partida tiene su barca (por ejemplo, `400 C`: máquina de 400 kg para color). Entre las máquinas de esa barca decide el algoritmo. Ambas decisiones se evalúan juntas, porque la máquina elegida cambia el balance y el balance decide qué conformación conviene.
 
-**Calendario.** Con objetivo de 16 partidas en 7 días, cada máquina recibe 2 o 3 partidas completas por día (3, 3, 2, 2, 2, 2, 2). Si un día hay más partidas disponibles que espacio, pasan al día siguiente más cercano. Las que exceden el objetivo semanal se muestran como Sobrante en su primer día disponible. Una máquina indisponible un día baja su objetivo a 14.
+**Calendario.** Es la misma regla del sistema (D-48, reparto proporcional y escalonado). La meta de cada máquina es `min(objetivo, partidas conformadas)`; al cerrar el día hábil j de H debe llevar `floor(meta·j/H + desfase)` partidas (el último día, la meta), con `desfase = ((m + semana ISO) mod M + 0.5)/M` y m en base 0. La cuota del día es esa cifra menos lo ya ubicado, con tope en el máximo diario; lo que falta un día se recupera en los siguientes. Con objetivo 16 en 7 días y desfase 0.5 queda 2, 3, 2, 2, 2, 3, 2. La semana ISO va a Java en `instancias/csv/<instancia>/parametros.csv`. Los resultados con la regla anterior (3, 3, 2, 2, 2, 2, 2) están en `resultados_regla_anterior/`. Las que exceden el objetivo semanal se muestran como Sobrante en su primer día disponible. Una máquina indisponible un día baja su objetivo a 14.
 
 **Función objetivo** (menor es mejor): `F = 1·E_S + 1·E_D + 0.25·Λ`, donde:
 

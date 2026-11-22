@@ -15,6 +15,7 @@ import java.util.List;
  */
 public final class Instancia {
     public String nombre;
+    public int semana;                 // semana ISO del lunes (parametros.csv)
     public int P, M, B, C, ND;
     /* P = numero de partidas candidatas de una semana (son todas en general)
     *  M = numero de maquinas de tintoreria
@@ -67,6 +68,10 @@ public final class Instancia {
     public static Instancia cargar(Path dir) throws IOException {
         Instancia I = new Instancia();
         I.nombre = dir.getFileName().toString();
+
+        // semana ISO del lunes de la instancia (reparto diario, D-48)
+        for (String[] r : leer(dir.resolve("parametros.csv")))
+            if (r[0].equals("semana")) I.semana = Integer.parseInt(r[1]);
 
         List<String[]> mq = leer(dir.resolve("maquinas.csv"));
         I.M = mq.size(); /*número de maquinas */

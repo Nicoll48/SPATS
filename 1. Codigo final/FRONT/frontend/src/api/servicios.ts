@@ -1,11 +1,12 @@
 import { REGISTROS_POR_PAGINA } from '@/components/ui/Paginacion'
 import { api } from './cliente'
+import type { RecomendacionesTejido } from './tipos'
 import type {
   Arrastrada, ArticuloRegistrado, Bolsa, CargaEliminada, CargaHistorial, CargaResponse, ColorRegistrado, Comparacion, ComponenteRegistrado,
   ConfirmacionResponse, ContextoReplanificacion, DetallePedido, DetalleProyeccion, EntradaBitacora, EstadoSemana,
-  GeneracionResponse, IncidenciaRegistrada, Indisponibilidad, ReplanificacionResponse,
-  Maquina, ModoInteraccion, Pagina, PartidaRegistrada, PedidoRegistrado, PlanificacionDetalle, Sesion, TipoDato, Usuario,
-  Version, VersionProyeccion, VersionProyeccionEliminada,
+  CambioVigenteResponse, ContextoCambioVigente, GeneracionResponse, IncidenciaRegistrada, Indisponibilidad, ReplanificacionResponse,
+  Maquina, ModoInteraccion, Pagina, PartidaRegistrada, PedidoRegistrado, PlanificacionDetalle, Sesion, TipoDato, Tonalidad, Usuario,
+  Version, VersionProyeccion, VersionProyeccionEliminada, VersionesSemana,
 } from './tipos'
 
 /** Una función por endpoint de la API; las pantallas no arman rutas a mano. */
@@ -20,11 +21,22 @@ export const planificacion = {
   estadoSemana: (lunes: string) => api.get<EstadoSemana>(`/semanas/${lunes}/estado`),
   vigente: (lunes: string) => api.get<PlanificacionDetalle>(`/semanas/${lunes}/planificacion`),
   versiones: (lunes: string) => api.get<Version[]>(`/semanas/${lunes}/versiones`),
-  generar: (lunes: string) => api.post<GeneracionResponse>(`/semanas/${lunes}/planificaciones`),
+  /** Sin `idProyeccion` usa la versión vigente de la proyección. Con otra versión, la nueva queda como candidata (D-52). */
+  generar: (lunes: string, idProyeccion?: number) =>
+    api.post<GeneracionResponse>(`/semanas/${lunes}/planificaciones`, undefined, idProyeccion === undefined ? undefined : { proyeccion: idProyeccion }),
+  /** Versiones de la proyección de la semana con su planificación (panel de versiones, D-52). */
+  versionesProyeccion: (lunes: string) => api.get<VersionesSemana>(`/semanas/${lunes}/versiones-proyeccion`),
+  contextoCambioVigente: (id: number) => api.get<ContextoCambioVigente>(`/planificaciones/${id}/cambio-vigente`),
+  usarComoVigente: (id: number, partidasEnMaquina: string[]) =>
+    api.post<CambioVigenteResponse>(`/planificaciones/${id}/cambio-vigente`, { partidasEnMaquina }),
   detalle: (id: number) => api.get<PlanificacionDetalle>(`/planificaciones/${id}`),
   bolsas: (id: number) => api.get<Bolsa[]>(`/planificaciones/${id}/bolsas`),
   comparar: (a: number, b: number) => api.get<Comparacion>('/planificaciones/comparacion', { a, b }),
   exportar: (id: number) => api.descargar(`/planificaciones/${id}/exportacion`, `planificacion_${id}.xlsx`),
+  /** RF30 (D-56): tejido adicional recomendado para la misma semana de una versión. */
+  recomendaciones: (id: number) => api.get<RecomendacionesTejido>(`/planificaciones/${id}/recomendaciones`),
+  /** Excel para tejeduría de la vigente, ordenado por día de tejido. */
+  exportarRecomendaciones: (lunes: string) => api.descargar(`/semanas/${lunes}/recomendaciones/exportacion`, `tejido_adicional_${lunes}.xlsx`),
   cerrar: (id: number, partidasCompletadas: string[]) =>
     api.post<{ completadas: number; arrastradas: number; pedidosCompletados: number }>(`/planificaciones/${id}/cierre`, { partidasCompletadas }),
   arrastradas: () => api.get<Arrastrada[]>('/partidas/arrastradas'),
@@ -33,8 +45,9 @@ export const planificacion = {
 
 export const replanificacion = {
   contexto: (lunes: string) => api.get<ContextoReplanificacion>(`/semanas/${lunes}/replanificacion`),
-  replanificar: (lunes: string, incidencias: number[], partidasEnMaquina: string[]) =>
-    api.post<ReplanificacionResponse>(`/semanas/${lunes}/replanificacion`, { incidencias, partidasEnMaquina }),
+  /** `porAnulacion`: re-planificar desde hoy para deshacer una incidencia anulada, sin exigir incidencias (D-57). */
+  replanificar: (lunes: string, incidencias: number[], partidasEnMaquina: string[], porAnulacion = false) =>
+    api.post<ReplanificacionResponse>(`/semanas/${lunes}/replanificacion`, { incidencias, partidasEnMaquina, porAnulacion }),
   confirmar: (id: number) => api.post<ConfirmacionResponse>(`/planificaciones/${id}/confirmacion`),
   descartar: (id: number) => api.eliminar<void>(`/planificaciones/${id}`),
 }
@@ -57,6 +70,8 @@ export const datos = {
   modificarArticulo: (id: number, nombre: string) => api.put<ArticuloRegistrado>(`/articulos/${id}`, { nombre }),
   eliminarArticulo: (id: number) => api.eliminar<void>(`/articulos/${id}`),
   partidas: () => api.get<PartidaRegistrada[]>('/partidas'),
+  /** Partidas pendientes sin ninguna máquina de su capacidad que acepte su tonalidad (D-51). */
+  partidasSinMaquinaCompatible: () => api.get<PartidaRegistrada[]>('/partidas/sin-maquina-compatible'),
   eliminarPartida: (id: number) => api.eliminar<void>(`/partidas/${id}`),
   modificarPartida: (id: number, cuerpo: { codigoColor: string; barca: string | null; pesoTotal: number }, confirmado = false) =>
     api.put<{ partida: PartidaRegistrada; advertencia: string | null }>(`/partidas/${id}`, cuerpo, { confirmado }),
@@ -72,7 +87,7 @@ export const datos = {
     api.put<DetalleProyeccion>(`/detalles-proyeccion/${id}`, cuerpo, { confirmado }),
   eliminarDetalleProyeccion: (id: number, confirmado = false) => api.eliminar<void>(`/detalles-proyeccion/${id}`, { confirmado }),
   eliminarVersionProyeccion: (id: number) => api.eliminar<VersionProyeccionEliminada>(`/proyecciones/${id}`, { confirmado: true }),
-  restaurarProyeccion: (id: number, confirmado = false) => api.post<VersionProyeccion>(`/proyecciones/${id}/restauracion`, undefined, { confirmado }),
+  restaurarProyeccion: (id: number) => api.post<VersionProyeccion>(`/proyecciones/${id}/restauracion`),
 }
 
 export interface GuardarMaquina {
@@ -81,12 +96,15 @@ export interface GuardarMaquina {
   clasificacionColor: string
   objetivoSemanal: number
   estado: string
+  /** D-51: al menos una. */
+  tonalidadesAceptadas: Tonalidad[]
 }
 
 export const maquinas = {
   buscar: (busqueda?: string) => api.get<Maquina[]>('/maquinas', { busqueda }),
   registrar: (cuerpo: GuardarMaquina) => api.post<Maquina>('/maquinas', cuerpo),
-  modificar: (id: number, cuerpo: GuardarMaquina) => api.put<Maquina>(`/maquinas/${id}`, cuerpo),
+  /** `confirmado`: el planificador ya vio el aviso de partidas afectadas por el cambio de tonalidades (D-51). */
+  modificar: (id: number, cuerpo: GuardarMaquina, confirmado = false) => api.put<Maquina>(`/maquinas/${id}`, cuerpo, { confirmado }),
   eliminar: (id: number) => api.eliminar<void>(`/maquinas/${id}`),
   todasLasIndisponibilidades: () => api.get<Indisponibilidad[]>('/maquinas/indisponibilidades'),
   eliminarIndisponibilidad: (id: number) => api.eliminar<void>(`/maquinas/indisponibilidades/${id}`),
@@ -109,6 +127,10 @@ export interface RegistrarIncidencia {
 export const incidencias = {
   deLaSemana: (lunes: string) => api.get<IncidenciaRegistrada[]>(`/semanas/${lunes}/incidencias`),
   registrar: (lunes: string, cuerpo: RegistrarIncidencia) => api.post<IncidenciaRegistrada>(`/semanas/${lunes}/incidencias`, cuerpo),
+  /** Cerrar sin re-planificar (D-54). */
+  atender: (lunes: string, id: number, motivo?: string) => api.post<IncidenciaRegistrada>(`/semanas/${lunes}/incidencias/${id}/atencion`, { motivo }),
+  /** Anular (D-57): registrada por error o que no ocurrió. */
+  anular: (lunes: string, id: number, motivo?: string) => api.post<IncidenciaRegistrada>(`/semanas/${lunes}/incidencias/${id}/anulacion`, { motivo }),
 }
 
 export const trazabilidad = {

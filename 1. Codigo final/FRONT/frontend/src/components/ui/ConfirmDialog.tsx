@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { AlertTriangle } from 'lucide-react'
 
-export type ConfirmTone = 'accent' | 'danger' | 'scenario'
+export type ConfirmTone = 'accent' | 'danger'
 
 interface ConfirmDialogProps {
   open: boolean
@@ -19,13 +19,12 @@ interface ConfirmDialogProps {
 const TONE_BUTTON: Record<ConfirmTone, string> = {
   accent: 'bg-accent text-accent-ink',
   danger: 'bg-danger text-white',
-  scenario: 'bg-scenario text-scenario-ink',
 }
 
 /**
  * Confirmación previa a toda acción que altera la planificación vigente
- * (RF50): Planificar, Replanificar, Marcar como vigente, Aplicar como plan
- * real y Descartar escenario. Deliberadamente modal y con foco inicial en
+ * (RF59): generar, re-planificar, usar otra versión como vigente o cerrar.
+ * Deliberadamente modal y con foco inicial en
  * Cancelar — la acción destructiva nunca se dispara con un Enter distraído.
  */
 export function ConfirmDialog({

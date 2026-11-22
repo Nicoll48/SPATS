@@ -3,6 +3,7 @@ package pe.edu.pucp.spats.planificacion.motor;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 import pe.edu.pucp.spats.planificacion.entity.Enumeraciones.ClasificacionResultado;
 import spats.algoritmo.salida.Indicadores;
@@ -16,7 +17,8 @@ public record ResultadoTraducido(List<FilaPartida> partidas,
                                  List<FilaMaquina> maquinas,
                                  List<FilaBolsa> bolsas,
                                  Indicadores indicadores,
-                                 List<String> advertencias) {
+                                 List<String> advertencias,
+                                 Map<String, String> motivosBloqueo) {
 
     /** Fila de {@code planificacion_partida} para una partida conformada (ASIGNADA o SOBRANTE). */
     public record FilaPartida(String numeroPartida, String codigoMaquina, LocalDate diaAbastecimiento,

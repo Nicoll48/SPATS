@@ -1,5 +1,6 @@
 package spats.algoritmo.nucleo;
 
+import java.time.temporal.IsoFields;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -9,16 +10,21 @@ import java.util.List;
  * Regla común que distribuye las partidas de cada máquina entre los días de la semana.
  *
  * <p>Las partidas de cada máquina se ordenan por fecha de entrega, día en que quedan disponibles y
- * orden de llegada. Cada día hábil recibe partidas completas: el máximo diario mientras se requiera
- * para alcanzar el objetivo y el mínimo en los días restantes (con objetivo 16 en siete días:
- * 3, 3, 2, 2, 2, 2, 2). Si en un día hay más partidas disponibles que espacio, el resto pasa al día
- * hábil siguiente. Las partidas que exceden el objetivo, o que llegan cuando los días restantes ya
- * alcanzaron su máximo, se ubican en su primer día disponible como Sobrantes.</p>
+ * orden de llegada. Reparto proporcional y escalonado (D-48): la meta de la máquina es
+ * {@code min(objetivo, partidas conformadas)} y, al cerrar el día hábil j de H, la máquina debería llevar
+ * {@code floor(meta · j / H + desfase)} partidas (en el último día, la meta completa). La cuota del día es
+ * esa cifra menos lo ya ubicado, sin superar el máximo diario. El desfase
+ * {@code ((m + semana ISO) mod M + 0.5) / M} reparte entre las máquinas los días que reciben una partida de
+ * más y los rota cada semana, para que la planta tenga una carga diaria pareja (con objetivo 16 en siete
+ * días y desfase 0.5: 2, 3, 2, 2, 2, 3, 2). Si un día no hay suficientes partidas disponibles, el faltante
+ * se recupera en los días siguientes con la misma fórmula. Las partidas que exceden la meta, o que llegan
+ * cuando los días restantes ya alcanzaron su máximo, se ubican en su primer día disponible como Sobrantes.</p>
  *
- * <p>Re-planificación: las fijas quedan en su día y con su clasificación; sus Asignadas ocupan lugar en el
- * día y descuentan del objetivo restante. Los días anteriores a {@code I.diaInicio} no reciben partidas
- * nuevas. Desde ese día se aplica la misma regla de cuotas, y ninguna partida se ubica antes de
- * {@code I.diaInicio} ni de su día {@code I.desde}.</p>
+ * <p>Re-planificación: las fijas quedan en su día y con su clasificación. Las Asignadas fijas de días
+ * anteriores a {@code I.diaInicio} (o de días ya no hábiles) descuentan de la meta; las del día
+ * {@code I.diaInicio} ocupan lugar en ese día. Desde ese día se aplica la misma fórmula, con H y j contados
+ * desde {@code I.diaInicio}, y ninguna partida se ubica antes de {@code I.diaInicio} ni de su día
+ * {@code I.desde}.</p>
  */
 public final class ConstructorCalendario {
 
@@ -69,25 +75,27 @@ public final class ConstructorCalendario {
             disp[t] = I.sigHabil[m][primerDia(I, s, idx[t])];   // primer día hábil disponible
             libre[t] = disp[t] > 0;
         }
-        int restante = I.objetivo[m], L = I.minimoDiario[m], U = I.maximoDiario[m];
-        int[] hab = I.diasHabiles[m];
-        for (int d = 1; d <= I.ND; d++)                          // fijas Asignadas en un día ya no hábil
-            if (!I.habil[m][d - 1] && fijas[d - 1] > 0) { cal.partidasPorDia[m][d - 1] = fijas[d - 1]; restante -= fijas[d - 1]; }
-        for (int jj = 0; jj < hab.length; jj++) {
-            int d = hab[jj];
-            int fijasHoy = fijas[d - 1];
-            if (d < I.diaInicio || restante <= 0) {
-                cal.partidasPorDia[m][d - 1] = fijasHoy;
-                restante -= fijasHoy;
-                continue;
-            }
-            int cuota = (restante - U >= L * (hab.length - jj - 1)) ? U : L;
-            cuota = Math.min(cuota, restante);
-            int tomadas = fijasHoy;
+        int U = I.maximoDiario[m];
+        int fijasFuera = 0, fijasDentro = 0, H = 0;
+        for (int d = 1; d <= I.ND; d++) {
+            boolean dentro = I.habil[m][d - 1] && d >= I.diaInicio;
+            if (dentro) { H++; fijasDentro += fijas[d - 1]; }
+            else if (fijas[d - 1] > 0) { cal.partidasPorDia[m][d - 1] = fijas[d - 1]; fijasFuera += fijas[d - 1]; }
+        }
+        // D-48: meta por ubicar desde el día de inicio y desfase que rota cada semana entre las máquinas
+        int semana = I.dias[0].get(IsoFields.WEEK_OF_WEEK_BASED_YEAR);
+        int meta = Math.max(0, Math.min(I.objetivo[m] - fijasFuera, n + fijasDentro)), ubicadas = 0, j = 0;
+        double desfase = (((m + semana) % I.M) + 0.5) / I.M;
+        for (int d : I.diasHabiles[m]) {
+            if (d < I.diaInicio) continue;
+            j++;
+            int metaHastaHoy = j == H ? meta : (int) Math.floor((double) meta * j / H + desfase);
+            int cuota = Math.min(U, metaHastaHoy - ubicadas);
+            int tomadas = fijas[d - 1];
             for (int t = 0; t < n && tomadas < cuota; t++)
                 if (libre[t] && disp[t] <= d) { libre[t] = false; cal.dia[idx[t]] = d; tomadas++; }
             cal.partidasPorDia[m][d - 1] = tomadas;
-            restante -= tomadas;
+            ubicadas += tomadas;
         }
         for (int t = 0; t < n; t++)
             if (cal.dia[idx[t]] < 0) {

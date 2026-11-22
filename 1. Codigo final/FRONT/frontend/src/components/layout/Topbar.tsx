@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Bell, ChevronDown, Compass, LogOut, Menu, UserRound } from 'lucide-react'
-import { findNavLabel } from '@/config/navigation'
+import { Bell, ChevronDown, ChevronRight, Compass, LogOut, Menu, UserRound } from 'lucide-react'
+import { findNavTrail } from '@/config/navigation'
 import { useAuth } from '@/auth/auth-context'
 import { useExperience } from '@/experience/experience-context'
 import { PERFIL } from '@/lib/etiquetas'
@@ -78,7 +78,7 @@ function MenuUsuario() {
 
 export function Topbar({ onOpenMobileNav }: TopbarProps) {
   const location = useLocation()
-  const title = findNavLabel(location.pathname)
+  const trail = findNavTrail(location.pathname)
   const { isGuided } = useExperience()
 
   return (
@@ -92,7 +92,20 @@ export function Topbar({ onOpenMobileNav }: TopbarProps) {
         <Menu className="h-5 w-5" aria-hidden="true" />
       </button>
 
-      <h1 className="min-w-0 flex-1 truncate text-base font-semibold text-ink sm:text-lg">{title}</h1>
+      {/* Carbon: la barra superior ubica al usuario (breadcrumb); el título grande va en la página. */}
+      <nav aria-label="Ubicación" className="min-w-0 flex-1">
+        <ol className="flex min-w-0 items-center gap-1.5 text-sm">
+          {trail.map((parte, i) => {
+            const ultima = i === trail.length - 1
+            return (
+              <li key={parte} className={`flex min-w-0 items-center gap-1.5 ${ultima ? 'font-semibold text-ink' : 'text-ink-soft'}`} aria-current={ultima ? 'page' : undefined}>
+                {i > 0 && <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden="true" />}
+                <span className="truncate">{parte}</span>
+              </li>
+            )
+          })}
+        </ol>
+      </nav>
 
       {isGuided && (
         <span className="hidden items-center gap-1.5 rounded-full border border-accent/25 bg-accent-soft px-2.5 py-1 text-xs font-semibold text-accent sm:inline-flex" title="Puedes cambiar a modo experto desde Configuración">

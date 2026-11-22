@@ -56,7 +56,7 @@ export const cuentas: Cuenta[] = [
 
 /** Etiqueta de ayuda del login: qué puede hacer cada perfil. */
 export const RESUMEN_PERFILES: Record<PerfilUsuario, string> = {
-  Planificador: 'Carga datos, configura, planifica, replanifica y aplica escenarios.',
+  Planificador: 'Carga datos, configura, planifica y replanifica.',
   Consulta: 'Solo visualización de todas las pantallas.',
 }
 
@@ -764,30 +764,10 @@ export const incidenciasPendientes: Incidencia[] = [
 ]
 
 // ---------------------------------------------------------------------------
-// 6. Escenarios
-// ---------------------------------------------------------------------------
-
-export interface ComparacionEscenarioFila {
-  metrica: string
-  vigente: string
-  escenario: string
-  mejora: boolean
-}
-
-export const comparacionEscenario: ComparacionEscenarioFila[] = [
-  { metrica: 'Partidas planificadas', vigente: '87', escenario: '89', mejora: true },
-  { metrica: 'Sobrantes', vigente: '5', escenario: '3', mejora: true },
-  { metrica: 'Bloqueadas', vigente: '2', escenario: '2', mejora: false },
-  { metrica: 'Máquinas equilibradas', vigente: '7/9', escenario: '8/9', mejora: true },
-  { metrica: 'Lavados', vigente: '14', escenario: '16', mejora: false },
-  { metrica: 'Cumplimiento de fechas', vigente: '94%', escenario: '98%', mejora: true },
-]
-
-// ---------------------------------------------------------------------------
 // 7. Historial
 // ---------------------------------------------------------------------------
 
-export type OrigenVersion = 'Plan inicial' | 'Replanificación' | 'Escenario aplicado'
+export type OrigenVersion = 'Plan inicial' | 'Replanificación'
 
 export interface VersionHistorial {
   id: string
@@ -804,7 +784,6 @@ export const historialVersiones: VersionHistorial[] = [
   { id: 'v-2', semana: '8–14 jun 2026', origen: 'Plan inicial', fecha: '6 jun 2026, 09:14', autor: 'Carlos T.', vigente: false },
   { id: 'v-3', semana: '8–14 jun 2026', origen: 'Replanificación', detalleOrigen: 'Incidencia de máquina — M9', fecha: '8 jun 2026, 08:22', autor: 'Carlos T.', vigente: true },
   { id: 'v-4', semana: '15–21 jun 2026', origen: 'Plan inicial', fecha: '13 jun 2026, 08:02', autor: 'Carlos T.', vigente: false },
-  { id: 'v-5', semana: '15–21 jun 2026', origen: 'Escenario aplicado', detalleOrigen: 'Escenario «Adelanto pedido Cliente Rivas»', fecha: '14 jun 2026, 11:20', autor: 'Carlos T.', vigente: true },
 ]
 
 export interface EntradaTrazabilidad {

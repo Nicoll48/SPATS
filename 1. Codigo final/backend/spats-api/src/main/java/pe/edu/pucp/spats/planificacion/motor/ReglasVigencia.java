@@ -44,18 +44,23 @@ public class ReglasVigencia {
     }
 
     /**
-     * D-19: cambió la planificación vigente de la semana {@code lunes} (se generó otra versión, se invalidó por
-     * la proyección o se confirmó una re-planificación). Si la semana siguiente tiene planificación vigente
-     * abierta, queda guardada como desactualizada ({@code stock_desactualizado}). Cerrar una semana no cambia
-     * su vigente, así que no marca la siguiente.
+     * D-19: cambió la planificación vigente de la semana {@code lunes} (se generó otra versión, se invalidó, se
+     * confirmó una re-planificación o se usó otra versión como vigente). Si la semana siguiente tiene planificación
+     * vigente abierta, queda guardada como desactualizada ({@code stock_desactualizado}); sus candidatas también
+     * (D-52). Generar una candidata no cambia la vigente, así que no marca nada. Cerrar una semana tampoco.
      */
     public void marcarSemanaSiguiente(LocalDate lunes) {
         planificaciones.findBySemanaFechaInicioAndEsVigenteTrue(lunes.plusWeeks(1))
                 .filter(p -> p.abierta() && !p.isStockDesactualizado())
-                .ifPresent(p -> {
-                    p.marcarStockDesactualizado();
-                    bitacora.registrarCambio("planificacion_semanal", p.getId(), "stock_desactualizado", false, true);
-                });
+                .ifPresent(this::marcar);
+        // D-52: las candidatas de la semana siguiente también tomaron su stock inicial del saldo anterior
+        planificaciones.candidatasDeLaSemana(lunes.plusWeeks(1)).stream().filter(p -> !p.isStockDesactualizado())
+                .forEach(this::marcar);
+    }
+
+    private void marcar(PlanificacionSemanal p) {
+        p.marcarStockDesactualizado();
+        bitacora.registrarCambio("planificacion_semanal", p.getId(), "stock_desactualizado", false, true);
     }
 
     /** Aviso de la marca guardada (D-19); no recalcula nada. */

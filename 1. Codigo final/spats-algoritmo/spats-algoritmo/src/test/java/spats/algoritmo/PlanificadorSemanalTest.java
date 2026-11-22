@@ -42,6 +42,12 @@ class PlanificadorSemanalTest {
                 .construir();
     }
 
+    /*
+     * D-48 no cambia los valores esperados. Esta prueba revisa la conformación (qué partidas reciben tela y en qué
+     * día queda disponible Y1), la máquina de cada partida, las bloqueadas y el stock final. Nada de eso depende del
+     * reparto diario: con 4 partidas en máquinas de objetivo 16, la meta de cada máquina es su número de partidas,
+     * y ninguna llega al máximo diario, así que siguen sin Sobrantes y con la misma fecha disponible.
+     */
     @Test
     @DisplayName("PU-28 Planificación completa de una semana pequeña")
     void planificacion() {
@@ -60,7 +66,7 @@ class PlanificadorSemanalTest {
 
         List<PartidaBloqueada> nc = r.bloqueadas();
         assertEquals(3, nc.size());
-        assertTrue(nc.stream().anyMatch(p -> p.partida().equals("Z1") && p.motivo().equals(PartidaExcluida.SIN_MAQUINA)));
+        assertTrue(nc.stream().anyMatch(p -> p.partida().equals("Z1") && p.motivo().equals(PartidaExcluida.SIN_MAQUINA_COMPATIBLE)));
         assertTrue(nc.stream().anyMatch(p -> p.partida().equals("W1") && p.motivo().equals(PartidaExcluida.SIN_TELA)));
         assertTrue(nc.stream().anyMatch(p -> p.partida().startsWith("X") && p.motivo().equals(PartidaBloqueada.TELA_PRIORIZADA)));
         assertTrue(nc.stream().noneMatch(p -> p.partida().equals("V1")));

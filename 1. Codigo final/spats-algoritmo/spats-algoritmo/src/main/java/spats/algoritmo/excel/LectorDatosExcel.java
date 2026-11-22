@@ -6,8 +6,10 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import spats.algoritmo.aco.ParametrosACO;
 import spats.algoritmo.entrada.Componente;
@@ -63,7 +65,7 @@ public final class LectorDatosExcel {
             List<Maquina> maquinas = new ArrayList<>();
             for (Celda c : filas(x, "Maquinas"))
                 maquinas.add(new Maquina(c.codigo("maquina"), c.numero("capacidad"), c.texto("tipo"), c.texto("barca"),
-                        c.entero("objetivo_semanal")));
+                        c.entero("objetivo_semanal"), tonalidades(c.opcional("tonalidades_aceptadas"))));
             List<Indisponibilidad> indisp = new ArrayList<>();
             if (x.tieneHoja("Indisponibilidad"))
                 for (Celda c : filas(x, "Indisponibilidad"))
@@ -92,6 +94,17 @@ public final class LectorDatosExcel {
             DatosSemana datos = new DatosSemana(par, maquinas, indisp, pedidos, partidas, componentes, proyeccion, stock);
             return new Configuracion(datos, aco);
         }
+    }
+
+    /**
+     * Columna opcional tonalidades_aceptadas de la hoja Maquinas (D-51): lista separada por comas, por nombre o rango
+     * ("Blanco, Claro" o "1,2"). Vacía o ausente: la máquina acepta las cuatro.
+     */
+    static Set<Tonalidad> tonalidades(String texto) {
+        if (texto == null || texto.isBlank()) return null;
+        Set<Tonalidad> t = EnumSet.noneOf(Tonalidad.class);
+        for (String parte : texto.split("[,;]")) if (!parte.isBlank()) t.add(Tonalidad.desdeTexto(parte.replaceAll("\\.0+$", "")));
+        return t;
     }
 
     private static List<Celda> filas(LectorXlsx x, String hoja) throws IOException {

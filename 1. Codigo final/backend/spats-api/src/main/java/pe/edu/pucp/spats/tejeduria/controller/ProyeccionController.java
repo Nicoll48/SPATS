@@ -24,9 +24,9 @@ import pe.edu.pucp.spats.tejeduria.dto.ProyeccionDtos.VersionProyeccionResponse;
 import pe.edu.pucp.spats.tejeduria.service.ProyeccionService;
 
 /**
- * Consulta, corrección y restauración de la proyección de tejeduría. Las operaciones que cambian la
- * proyección vigente aceptan {@code confirmado=true} cuando la semana tiene una planificación vigente
- * abierta, que dejará de ser vigente (D-06, RF59).
+ * Consulta, corrección y restauración de la proyección de tejeduría. Restaurar crea una versión nueva y no cambia
+ * la planificación vigente (D-52). Corregir o eliminar un registro de la versión vigente acepta
+ * {@code confirmado=true} cuando hay planificaciones generadas con ella, que dejarán de ser vigentes (D-06, RF59).
  */
 @RestController
 @RequestMapping("/api")
@@ -60,8 +60,7 @@ public class ProyeccionController {
     }
 
     @PostMapping("/proyecciones/{id}/restauracion")
-    public VersionProyeccionResponse restaurar(@PathVariable Integer id,
-                                               @RequestParam(defaultValue = "false") boolean confirmado) {
-        return servicio.restaurar(id, confirmado);
+    public VersionProyeccionResponse restaurar(@PathVariable Integer id) {
+        return servicio.restaurar(id);
     }
 }

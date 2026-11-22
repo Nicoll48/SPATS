@@ -5,8 +5,19 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
+  /* Tipografía (Carbon usa IBM Plex Sans). Para volver a Inter basta con cambiar
+     --font-sans por la línea comentada: ambas fuentes ya se cargan en index.html. */
+  /* --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif; */
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Color de cada tipo de dato en Carga de datos (ícono de su tarjeta). */
+  --color-tipo-pedidos: #0f62fe;
+  --color-tipo-pedidos-soft: #edf5ff;
+  --color-tipo-partidas: #8a3ffc;
+  --color-tipo-partidas-soft: #f6f2ff;
+  --color-tipo-proyeccion: #198038;
+  --color-tipo-proyeccion-soft: #defbe6;
 
   /* Paleta clara (valores por defecto de --color-*) */
   --color-canvas: #f3f6fa;
@@ -16,6 +27,10 @@
   --color-ink: #0b2342;
   --color-ink-soft: #4b6079;
   --color-ink-faint: #75879d;
+  /* Líneas del calendario (contorno, filas y columnas): un poco más marcadas que --color-line. */
+  --color-linea-calendario: #8a9db4;
+  /* Borde de la tarjeta de cada partida en el calendario con una sola versión: algo más oscuro que --color-line. */
+  --color-borde-partida: #a3b5ca;
 
   /* Acento teal: remite a tina de tintorería sin caer en un ícono literal;
      distinto del azul genérico de panel-servidores para que ambas skills
@@ -23,23 +38,52 @@
   --color-accent: #002f6d;
   --color-accent-ink: #ffffff;
   --color-accent-soft: #e4edf8;
+  /* Fondo de las tarjetas de indicadores: el mismo azul que «Partidas asignadas», mucho más claro. */
+  --color-indicador: #ebf1fa;
+  /* Texto de los indicadores (etiqueta y cifra): casi negro. */
+  --color-indicador-texto: #111827;
 
-  --color-success: #12925a;
+  --color-success: #0e7a4b;
   --color-success-soft: #e6f6ee;
-  --color-warning: #b25e09;
+  --color-warning: #a35407;
   --color-warning-soft: #fef3e6;
   --color-danger: #e20016;
   --color-danger-soft: #fde7e9;
 
-  /* Tono reservado exclusivamente para "espacio de escenario" (ver
-     ScenarioBanner y la insignia de historial "originada en escenario").
-     A propósito NO es el accent ni ningún tono de estado — verde/ámbar/
-     rojo/gris ya están comprometidos con equilibrio y alertas — así un
-     vistazo alcanza para saber si estás en el plan real o en una copia
-     aislada, sin importar el estado de las partidas dentro de ella. */
-  --color-scenario: #7c3aed;
-  --color-scenario-ink: #ffffff;
-  --color-scenario-soft: #f1eafe;
+  /* Lavado de máquina entre tonalidades: celeste, distinto de los estados. */
+  --color-lavado: #0b74b5;
+  --color-lavado-soft: #e2f1fb;
+}
+
+/* Versiones de la proyección en el calendario (D-52), tomadas de imagenes/colores.png: cada versión tiene su color
+   (cuadrito de la etiqueta «V1» y texto), su borde claro y su fondo. V1 azul #234F79 (borde #7DA0C1, fondo
+   #E4EDF6) y V2 oliva #5B663A (borde #A0AE84, fondo #E9EEDC). La cabecera usa el mismo tono en los dos temas
+   (lleva texto blanco); en modo oscuro --color-version-N se aclara porque también se usa como color de texto. Los demás se eligieron lejos
+   de las muestras de tonalidad (blanco, claro, medio, oscuro), del rojo de sobrante, del celeste de lavado y del
+   verde/ámbar del contador. Desde la V6 se repiten; cada tarjeta lleva además su etiqueta «V1», «V2»...
+   Van en :root y no en @theme porque se usan con var() en estilos en línea: Tailwind solo emite las variables
+   de @theme que usa alguna clase. */
+:root {
+  --color-version-1: #234f79;
+  --color-version-1-soft: #e4edf6;
+  --color-version-1-borde: #7da0c1;
+  --color-version-1-cabecera: #234f79;
+  --color-version-2: #5b663a;
+  --color-version-2-soft: #e9eedc;
+  --color-version-2-borde: #a0ae84;
+  --color-version-2-cabecera: #5b663a;
+  --color-version-3: #1f6f6b;
+  --color-version-3-soft: color-mix(in srgb, var(--color-version-3) 12%, var(--color-panel));
+  --color-version-3-borde: color-mix(in srgb, var(--color-version-3) 45%, var(--color-panel));
+  --color-version-3-cabecera: var(--color-version-3);
+  --color-version-4: #6b3a5e;
+  --color-version-4-soft: color-mix(in srgb, var(--color-version-4) 12%, var(--color-panel));
+  --color-version-4-borde: color-mix(in srgb, var(--color-version-4) 45%, var(--color-panel));
+  --color-version-4-cabecera: var(--color-version-4);
+  --color-version-5: #475569;
+  --color-version-5-soft: color-mix(in srgb, var(--color-version-5) 12%, var(--color-panel));
+  --color-version-5-borde: color-mix(in srgb, var(--color-version-5) 45%, var(--color-panel));
+  --color-version-5-cabecera: var(--color-version-5);
 }
 
 /* Paleta oscura: mismos nombres de variable, valores distintos.
@@ -53,10 +97,22 @@
   --color-ink: #eef1f6;
   --color-ink-soft: #97a2b8;
   --color-ink-faint: #5d6780;
+  --color-borde-partida: #3a4560;
+  --color-linea-calendario: #4d5974;
 
-  --color-accent: #2dd4bf;
-  --color-accent-ink: #06251f;
-  --color-accent-soft: rgba(45, 212, 191, 0.14);
+  /* Carbon mantiene el mismo tono interactivo entre temas: azul claro en oscuro. */
+  --color-accent: #78a9ff;
+  --color-accent-ink: #0b1a33;
+  --color-accent-soft: rgba(120, 169, 255, 0.16);
+  --color-indicador: rgba(120, 169, 255, 0.07);
+  --color-indicador-texto: #f5f7fb;
+
+  --color-tipo-pedidos: #78a9ff;
+  --color-tipo-pedidos-soft: rgba(120, 169, 255, 0.16);
+  --color-tipo-partidas: #be95ff;
+  --color-tipo-partidas-soft: rgba(190, 149, 255, 0.16);
+  --color-tipo-proyeccion: #42be65;
+  --color-tipo-proyeccion-soft: rgba(66, 190, 101, 0.16);
 
   --color-success: #3ecf8e;
   --color-success-soft: rgba(62, 207, 142, 0.12);
@@ -65,9 +121,19 @@
   --color-danger: #f0685f;
   --color-danger-soft: rgba(240, 104, 95, 0.12);
 
-  --color-scenario: #a78bfa;
-  --color-scenario-ink: #1e1240;
-  --color-scenario-soft: rgba(167, 139, 250, 0.14);
+  --color-lavado: #5cc2f2;
+  --color-lavado-soft: rgba(92, 194, 242, 0.14);
+
+  /* Mismos tonos de V1 y V2, aclarados para leerse sobre el fondo oscuro. */
+  --color-version-1: #7fa3c9;
+  --color-version-1-soft: rgba(125, 160, 193, 0.12);
+  --color-version-1-borde: rgba(125, 160, 193, 0.45);
+  --color-version-2: #b5c08f;
+  --color-version-2-soft: rgba(160, 174, 132, 0.12);
+  --color-version-2-borde: rgba(160, 174, 132, 0.45);
+  --color-version-3: #6fb3ad;
+  --color-version-4: #c79ab9;
+  --color-version-5: #94a3b8;
 }
 
 @layer base {

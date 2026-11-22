@@ -41,9 +41,11 @@ public class MaquinaController {
         return servicio.registrar(solicitud);
     }
 
+    /** {@code confirmado=true}: el planificador ya vio el aviso de partidas afectadas por el cambio (D-51). */
     @PutMapping("/{id}")
-    public MaquinaResponse modificar(@PathVariable Integer id, @Valid @RequestBody GuardarMaquinaRequest solicitud) {
-        return servicio.modificar(id, solicitud);
+    public MaquinaResponse modificar(@PathVariable Integer id, @Valid @RequestBody GuardarMaquinaRequest solicitud,
+                                     @RequestParam(defaultValue = "false") boolean confirmado) {
+        return servicio.modificar(id, solicitud, confirmado);
     }
 
     @DeleteMapping("/{id}")

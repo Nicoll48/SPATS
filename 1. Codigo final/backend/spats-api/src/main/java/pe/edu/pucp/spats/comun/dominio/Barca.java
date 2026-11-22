@@ -8,8 +8,8 @@ import java.util.regex.Pattern;
 import pe.edu.pucp.spats.comun.error.ReglaNegocioException;
 
 /**
- * Barca de una partida o máquina, p. ej. {@code "400 C"}: capacidad en kg y clasificación de color
- * (RN-06). Una partida solo va a una máquina con su misma barca.
+ * Barca de una partida o máquina, p. ej. {@code "400 C"}: capacidad en kg y clasificación de color. Desde D-51
+ * la compatibilidad usa solo el número (la capacidad); la letra es informativa (RN-06).
  */
 public record Barca(BigDecimal capacidad, ClasificacionColor clasificacion) {
 
@@ -22,6 +22,30 @@ public record Barca(BigDecimal capacidad, ClasificacionColor clasificacion) {
         if (!m.matches()) return Optional.empty();
         return Optional.of(new Barca(new BigDecimal(m.group(1).replace(',', '.')),
                 ClasificacionColor.valueOf(m.group(2).toUpperCase())));
+    }
+
+    private static final Pattern NUMERO_INICIAL = Pattern.compile("^\\s*(\\d+(?:[.,]\\d+)?)");
+
+    /**
+     * Número con que empieza la barca (D-51): de "600 C", "600 B" o "600" se toma 600. Es lo único que usa la
+     * compatibilidad; la letra es informativa. Vacío si no empieza con un número.
+     */
+    public static Optional<BigDecimal> capacidadDe(String texto) {
+        if (texto == null) return Optional.empty();
+        Matcher m = NUMERO_INICIAL.matcher(texto);
+        return m.find() ? Optional.of(new BigDecimal(m.group(1).replace(',', '.'))) : Optional.empty();
+    }
+
+    /**
+     * Barca de una partida (D-51): debe empezar con un número. Devuelve la forma normalizada ("400 C" si tiene
+     * capacidad y letra; si no, el texto sin espacios sobrantes), o null si viene vacía.
+     */
+    public static String validadaPorCapacidad(String texto) {
+        if (texto == null || texto.isBlank()) return null;
+        if (capacidadDe(texto).isEmpty())
+            throw new ReglaNegocioException("BARCA_INVALIDA",
+                    "La barca «" + texto.trim() + "» debe empezar con la capacidad en kg, por ejemplo «400 C».");
+        return normalizar(texto);
     }
 
     /** Forma normalizada con la que se guarda y se compara: "400 C". */

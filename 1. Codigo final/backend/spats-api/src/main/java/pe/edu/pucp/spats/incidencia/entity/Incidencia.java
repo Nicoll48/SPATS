@@ -125,4 +125,10 @@ public class Incidencia {
 
     /** La incidencia quedó considerada en una re-planificación confirmada (RF54). */
     public void considerar() { this.estado = EstadoIncidencia.CONSIDERADA; }
+
+    /** Cerrada sin re-planificar (D-54). */
+    public void atender() { this.estado = EstadoIncidencia.ATENDIDA; }
+
+    /** Cancelada por el planificador (D-57). */
+    public void anular() { this.estado = EstadoIncidencia.ANULADA; }
 }

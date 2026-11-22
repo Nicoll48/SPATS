@@ -93,9 +93,12 @@ simular_semana <- function(I, regla) {
 
 # -----------------------------------------------------------------------------
 # Calendario de cada máquina (lunes a domingo)
-# Regla común: cada día se ubican las partidas que corresponden (2 o 3, en
-# partidas completas, hasta llegar al objetivo semanal) y el resto pasa al día
-# siguiente más cercano. Ante más partidas disponibles que espacio, primero va
+# Regla común (la misma del sistema, D-48): meta = min(objetivo, conformadas);
+# al cerrar el día hábil j de nk, la máquina debe llevar
+# floor(meta*j/nk + desfase) partidas (el último día, la meta), con
+# desfase = ((m + semana ISO) mod M + 0.5)/M (m en base 0). La cuota del día es
+# esa cifra menos lo ya ubicado, con tope en el máximo diario; lo que no se
+# ubica un día por falta de partidas se recupera en los siguientes. Ante más partidas disponibles que espacio, primero va
 # la de fecha de entrega más próxima y luego la que llegó antes. Las que exceden
 # el objetivo semanal, o que llegan al final de la semana cuando los días
 # restantes ya tienen su máximo, se muestran como Sobrante en su primer día
@@ -118,20 +121,24 @@ construir_calendario <- function(I, sol) {
     hab <- I$dias_habiles_lista[[m]]
     disp <- I$sig_habil[m, sol$dia_conf[idx]]   # primer día hábil disponible
     libre <- !is.na(disp)
-    R <- I$O[m]; L <- I$L[m]; U <- I$U[m]
-    nk <- length(hab)
+    # Reparto proporcional y escalonado (D-48 del sistema): al cerrar el día
+    # hábil j de nk la máquina debe llevar floor(meta*j/nk + desfase) partidas
+    # (el último día, la meta); el desfase rota entre máquinas y semanas.
+    semana  <- as.integer(strftime(I$lunes, "%V"))
+    meta    <- min(I$O[m], length(idx)); U <- I$U[m]; nk <- length(hab); ubicadas <- 0L
+    desfase <- (((m - 1L + semana) %% I$M) + 0.5) / I$M     # m en base 1 (en Java, base 0)
     for (j in seq_len(nk)) {
-      if (R <= 0L) break
       d <- hab[j]
-      cuota <- if (R - U >= L * (nk - j)) U else L
-      if (cuota > R) cuota <- R
+      meta_hoy <- if (j == nk) meta else floor(meta * j / nk + desfase)
+      cuota <- min(U, meta_hoy - ubicadas)
+      if (cuota <= 0L) next
       cola <- which(libre & disp <= d)
       if (length(cola) == 0L) next
       if (length(cola) > cuota) cola <- cola[seq_len(cuota)]
       libre[cola] <- FALSE
       dia[idx[cola]] <- d
       n_dia[m, d] <- length(cola)
-      R <- R - length(cola)
+      ubicadas <- ubicadas + length(cola)
     }
     resto <- which(is.na(dia[idx]))
     if (length(resto)) {

@@ -43,7 +43,7 @@ import spats.algoritmo.salida.ResultadoPlanificacion;
 /**
  * Re-planificación desde el día actual D (HU-18, RF53–RF55, RN-25). Sigue los mismos pasos que la generación:
  * leer (solo lectura), optimizar (sin transacción) y guardar (una transacción). Además evalúa la vigente en el
- * mismo escenario para decidir si propone la nueva (RF55). La propuesta solo pasa a vigente cuando el
+ * misma instancia para decidir si propone la nueva (RF55). La propuesta solo pasa a vigente cuando el
  * planificador la confirma (D-13b); si la descarta, se elimina (D-26).
  */
 @Service
@@ -99,28 +99,51 @@ public class ReplanificacionService {
             throw new ConflictoException("PLANIFICACION_EN_CURSO", "Ya se está re-planificando esta semana.");
         try {
             Set<String> enMaquina = s.partidasEnMaquina() == null ? Set.of() : new HashSet<>(s.partidasEnMaquina());
-            EntradaReplanificacion e = lector.leer(lunes, s.incidencias(), enMaquina);
-            ResultadoPlanificacion nueva = ejecutor.ejecutar(e.datos());
-            ResultadoTraducido traducido = TraductorResultado.traducirReplanificacion(e.datos(), nueva, e.dia(), e.bolsaVigente());
-            Indicadores vigente = ejecutor.evaluar(e.datos(), e.alternativaVigente());
-            List<String> advertencias = new ArrayList<>(e.advertencias());
-            advertencias.addAll(traducido.advertencias());
-            Integer idVigente = e.entrada().idVigenteAnterior();
-            if (DecisionReplanificacion.decidir(nueva.indicadores(), vigente) == DecisionReplanificacion.Resultado.CONSERVAR_VIGENTE) {
-                advertencias.add(0, "La re-planificación no encontró una alternativa con menor desviación que la vigente. "
-                        + "Se conserva la planificación vigente y no se guardó nada.");
-                return new ReplanificacionResponse(ResultadoReplanificacion.SE_CONSERVA_VIGENTE, e.dia(), null, null, idVigente,
-                        decimal(nueva.indicadores().funcionObjetivo()), decimal(vigente.funcionObjetivo()), true, List.of(),
-                        null, nueva.indicadores().detenidaPorTiempo(), List.copyOf(advertencias));
-            }
-            PlanificacionSemanal plan = guardado.proponer(e, traducido);
-            return new ReplanificacionResponse(ResultadoReplanificacion.PROPUESTA, e.dia(), plan.getId(), plan.getNumeroVersion(),
-                    idVigente, decimal(nueva.indicadores().funcionObjetivo()), decimal(vigente.funcionObjetivo()),
-                    vigente.factible(), vigente.incumplimientos(), mapper.indicadores(plan),
-                    nueva.indicadores().detenidaPorTiempo(), List.copyOf(advertencias));
+            // D-57: tras anular una incidencia se re-planifica sin exigir incidencias y siempre se propone
+            if (Boolean.TRUE.equals(s.porAnulacion())) return ejecutar(lector.leerPorAnulacion(lunes, s.incidencias(), enMaquina), true);
+            return ejecutar(lector.leer(lunes, s.incidencias(), enMaquina), false);
         } finally {
             enCurso.remove(lunes);
         }
+    }
+
+    /**
+     * Re-planificación desde hoy para usar otra versión de la proyección como vigente, con la semana ya empezada
+     * (D-52). Lo anterior a hoy se conserva de la vigente. Siempre se propone: el planificador ya pidió el cambio y
+     * decide al confirmar, viendo la F de la vigente evaluada con la nueva proyección (RF55 informa, no decide).
+     */
+    @PreAuthorize("hasRole('PLANIFICADOR')")
+    public ReplanificacionResponse replanificarConVersion(LocalDate lunes, Integer idProyeccion, List<String> partidasEnMaquina) {
+        if (!enCurso.add(lunes))
+            throw new ConflictoException("PLANIFICACION_EN_CURSO", "Ya se está re-planificando esta semana.");
+        try {
+            Set<String> enMaquina = partidasEnMaquina == null ? Set.of() : new HashSet<>(partidasEnMaquina);
+            return ejecutar(lector.leerCambioVersion(lunes, idProyeccion, enMaquina), true);
+        } finally {
+            enCurso.remove(lunes);
+        }
+    }
+
+    private ReplanificacionResponse ejecutar(EntradaReplanificacion e, boolean siempreProponer) {
+        ResultadoPlanificacion nueva = ejecutor.ejecutar(e.datos());
+        ResultadoTraducido traducido = TraductorResultado.traducirReplanificacion(e.datos(), nueva, e.dia(), e.bolsaVigente());
+        Indicadores vigente = ejecutor.evaluar(e.datos(), e.alternativaVigente());
+        List<String> advertencias = new ArrayList<>(e.advertencias());
+        advertencias.addAll(traducido.advertencias());
+        Integer idVigente = e.entrada().idVigenteAnterior();
+        if (!siempreProponer
+                && DecisionReplanificacion.decidir(nueva.indicadores(), vigente) == DecisionReplanificacion.Resultado.CONSERVAR_VIGENTE) {
+            advertencias.add(0, "La re-planificación no encontró una alternativa con menor desviación que la vigente. "
+                    + "Se conserva la planificación vigente y no se guardó nada.");
+            return new ReplanificacionResponse(ResultadoReplanificacion.SE_CONSERVA_VIGENTE, e.dia(), null, null, idVigente,
+                    decimal(nueva.indicadores().funcionObjetivo()), decimal(vigente.funcionObjetivo()), true, List.of(),
+                    null, nueva.indicadores().detenidaPorTiempo(), List.copyOf(advertencias));
+        }
+        PlanificacionSemanal plan = guardado.proponer(e, traducido);
+        return new ReplanificacionResponse(ResultadoReplanificacion.PROPUESTA, e.dia(), plan.getId(), plan.getNumeroVersion(),
+                idVigente, decimal(nueva.indicadores().funcionObjetivo()), decimal(vigente.funcionObjetivo()),
+                vigente.factible(), vigente.incumplimientos(), mapper.indicadores(plan),
+                nueva.indicadores().detenidaPorTiempo(), List.copyOf(advertencias));
     }
 
     @PreAuthorize("hasRole('PLANIFICADOR')")

@@ -12,6 +12,16 @@ export const CLASIFICACION_COLOR: Record<ClasificacionColor, string> = { C: 'Col
 
 export const TONALIDAD: Record<Tonalidad, string> = { BLANCO: 'Blanco', CLARO: 'Claro', MEDIO: 'Medio', OSCURO: 'Oscuro' }
 
+/** Orden de las tonalidades, de la más clara a la más oscura. */
+export const ORDEN_TONALIDAD: Tonalidad[] = ['BLANCO', 'CLARO', 'MEDIO', 'OSCURO']
+
+/** D-51: tonalidades que acepta una máquina, en texto: «Todas» o «Blanco, Claro». */
+export function textoAcepta(tonalidades: Tonalidad[] | null | undefined): string {
+  if (!tonalidades || tonalidades.length === 0) return '—'
+  if (tonalidades.length === ORDEN_TONALIDAD.length) return 'Todas'
+  return ORDEN_TONALIDAD.filter((t) => tonalidades.includes(t)).map((t) => TONALIDAD[t]).join(', ')
+}
+
 /** Muestra de la tonalidad: de más clara a más oscura (el lavado se da al pasar a una más clara). */
 export const MUESTRA_TONALIDAD: Record<Tonalidad, string> = {
   BLANCO: '#ecebe4',
@@ -40,8 +50,9 @@ export const ESTADO_PLANIFICACION: Record<EstadoPlanificacion, string> = {
   ABIERTA: 'Vigente',
   CERRADA: 'Vigente · cerrada',
   REEMPLAZADA: 'Reemplazada',
-  INVALIDADA: 'Sin vigencia (cambió la proyección)',
+  INVALIDADA: 'Sin vigencia (cambiaron sus datos)',
   PROPUESTA: 'Propuesta sin confirmar',
+  CANDIDATA: 'Otra versión (no vigente)',
 }
 export const TONO_PLANIFICACION: Record<EstadoPlanificacion, StatusTone> = {
   ABIERTA: 'success',
@@ -49,6 +60,7 @@ export const TONO_PLANIFICACION: Record<EstadoPlanificacion, StatusTone> = {
   REEMPLAZADA: 'neutral',
   INVALIDADA: 'warning',
   PROPUESTA: 'warning',
+  CANDIDATA: 'neutral',
 }
 
 export const TIPO_DATO: Record<TipoDato, string> = {

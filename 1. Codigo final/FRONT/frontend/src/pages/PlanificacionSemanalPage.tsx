@@ -1,35 +1,45 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
-  AlertTriangle, Ban, CalendarCheck2, CalendarRange, CheckCircle2, CornerDownRight, Download, Droplets, Gauge, ListChecks,
-  Loader2, PackageMinus, PieChart, Play, ShoppingBag, UploadCloud,
+  AlertTriangle, Ban, CalendarCheck2, CalendarRange, CornerDownRight, Download, Info,
+  Loader2, PackageMinus, PieChart, Play, RefreshCw, Scissors, ShoppingBag, UploadCloud,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { SoloLecturaAviso } from '@/components/common/SoloLecturaAviso'
-import { AvisoError, Cargando, ListaAdvertencias } from '@/components/common/AvisoError'
+import { AvisoError, Cargando } from '@/components/common/AvisoError'
+import { useAvisos } from '@/avisos/avisos-context'
 import { Tabs, type TabItem } from '@/components/ui/Tabs'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { StatusPill } from '@/components/ui/StatusPill'
 import { WeekSelector } from '@/components/planning/WeekSelector'
-import { SummaryBar, type SummaryStat } from '@/components/planning/SummaryBar'
-import { PlanningGrid, PlanningGridLegend } from '@/components/planning/PlanningGrid'
+import { IndicadoresPlan } from '@/components/planning/IndicadoresPlan'
+import { CalendarioPlanificacion, EtiquetaVersion } from '@/components/planning/CalendarioPlanificacion'
+import {
+  BarraIndicadoresVersiones, DialogoCambioVigente, DialogoPropuestaVersion, MAXIMO_MARCADAS, PanelVersiones,
+} from '@/components/planning/VersionesProyeccion'
+import { PropuestaReplanificacion } from '@/components/incidencias/PropuestaReplanificacion'
+import { RecomendacionesTejido } from '@/components/planning/RecomendacionesTejido'
 import { PartidasAsignadasDashboard } from '@/components/planning/PartidasAsignadasDashboard'
-import { partidasDelPlan } from '@/components/planning/SobrantesTable'
+import { partidasDelPlan, type FilaPartidaPlan } from '@/components/planning/SobrantesTable'
 import { ControlesPartidasPlan, ListaPartidasPlan, useFiltrosPartidasPlan } from '@/components/planning/FiltrosPartidasPlan'
 import { FiltroLista } from '@/components/common/Filtros'
-import { BloqueadasTable } from '@/components/planning/BloqueadasTable'
+import { BloqueadasTable, type BloqueadaConVersion } from '@/components/planning/BloqueadasTable'
 import { AlertasList } from '@/components/planning/AlertasList'
 import { EmptyPlanState } from '@/components/planning/EmptyPlanState'
 import { GuidedWorkflow } from '@/components/planning/GuidedWorkflow'
 import { MENSAJE_SIN_PERMISO, useAuth } from '@/auth/auth-context'
 import { useExperience } from '@/experience/experience-context'
 import { useSemana } from '@/semana/semana-context'
-import { planificacion } from '@/api/servicios'
+import { planificacion, replanificacion } from '@/api/servicios'
 import type { ErrorApi } from '@/api/cliente'
-import type { Bolsa, GeneracionResponse, PlanificacionDetalle } from '@/api/tipos'
+import type {
+  Bolsa, ContextoCambioVigente, GeneracionResponse, PlanificacionDetalle, ReplanificacionResponse, VersionProyeccionPlan,
+  VersionesSemana,
+} from '@/api/tipos'
 import { intentar, useDatos } from '@/lib/useDatos'
 import { CLASIFICACION_RESULTADO, ESTADO_PLANIFICACION, TONO_PLANIFICACION, kg, numero } from '@/lib/etiquetas'
-import { etiquetaSemana, fechaCorta, fechaHora, nombreDia } from '@/lib/fechas'
+import { ahoraLocal, etiquetaSemana, fechaCorta, fechaHora, nombreDia } from '@/lib/fechas'
+import { asignarColoresVersiones, compararVersiones, etiquetaVersion, unirPorVersion, type CalendarioComparado, type VersionMarcada } from '@/lib/versiones'
 import { Paginado } from '@/components/ui/Paginacion'
 
 const TABS: TabItem[] = [
@@ -37,12 +47,26 @@ const TABS: TabItem[] = [
   { id: 'asignadas', label: 'Partidas asignadas', icon: PieChart },
   { id: 'sobrantes', label: 'Partidas sobrantes', icon: PackageMinus },
   { id: 'bloqueadas', label: 'Partidas bloqueadas', icon: Ban },
+  { id: 'recomendaciones', label: 'Recomendaciones', icon: Scissors },
   { id: 'arrastradas', label: 'Partidas arrastradas', icon: CornerDownRight },
   { id: 'alertas', label: 'Alertas', icon: AlertTriangle },
   { id: 'bolsas', label: 'Bolsas de tela', icon: ShoppingBag },
 ]
 
 const btnBase = 'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-40'
+
+/** Partidas conformadas de las versiones marcadas; la misma partida en la misma máquina y día va una sola vez. */
+function filasConVersion(vistas: VersionMarcada[], conEtiqueta: boolean, clasificacion: 'ASIGNADA' | 'SOBRANTE'): FilaPartidaPlan[] {
+  const listas = vistas.map((v) => ({ version: v.version, filas: partidasDelPlan(v.plan.maquinas).filter((f) => f.clasificacion === clasificacion) }))
+  if (!conEtiqueta) return listas[0]?.filas ?? []
+  return unirPorVersion(listas, (f) => `${f.numeroPartida}|${f.maquina}|${f.dia}`).map((x) => ({ ...x.fila, versiones: x.versiones }))
+}
+
+function bloqueadasConVersion(vistas: VersionMarcada[], conEtiqueta: boolean): BloqueadaConVersion[] {
+  if (!conEtiqueta) return vistas[0]?.plan.bloqueadas ?? []
+  return unirPorVersion(vistas.map((v) => ({ version: v.version, filas: v.plan.bloqueadas })), (b) => `${b.numeroPartida}|${b.motivo ?? ''}`)
+    .map((x) => ({ ...x.fila, versiones: x.versiones }))
+}
 
 export function PlanificacionSemanalPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -51,24 +75,80 @@ export function PlanificacionSemanalPage() {
   const { lunes } = useSemana()
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') ?? 'calendario')
   const [confirmando, setConfirmando] = useState<'generar' | 'cerrar' | null>(null)
-  const [generando, setGenerando] = useState(false)
+  /** Versión que se está generando: 'vigente' desde el botón principal o el número de la versión del panel. */
+  const [generando, setGenerando] = useState<'vigente' | number | null>(null)
+  /** D-52: versión que se genera sin vigente en la semana; queda como vigente, así que se confirma antes. */
+  const [versionPorGenerar, setVersionPorGenerar] = useState<VersionProyeccionPlan | null>(null)
   const [error, setError] = useState<ErrorApi | null>(null)
   const [resultado, setResultado] = useState<GeneracionResponse | null>(null)
   const [mensaje, setMensaje] = useState<string | null>(null)
+  const avisar = useAvisos()
+  // Los mensajes de resultado salen como aviso flotante abajo a la derecha, no fijos en la pantalla.
+  useEffect(() => { if (mensaje) { avisar({ tipo: 'success', titulo: mensaje }); setMensaje(null) } }, [mensaje, avisar])
   const [revisadas, setRevisadas] = useState<Set<string>>(new Set())
+  const [marcadas, setMarcadas] = useState<number[]>([])
+  const [recargas, setRecargas] = useState(0)
+  const [cambio, setCambio] = useState<ContextoCambioVigente | null>(null)
+  const [enviando, setEnviando] = useState(false)
+  const [propuesta, setPropuesta] = useState<{ version: number; resultado: ReplanificacionResponse } | null>(null)
 
   const estado = useDatos(() => planificacion.estadoSemana(lunes), [lunes])
   const idVigente = estado.datos?.planificacionVigente?.id ?? null
   const plan = useDatos<PlanificacionDetalle | null>(
-    () => (idVigente ? planificacion.detalle(idVigente) : Promise.resolve(null)), [idVigente])
+    () => (idVigente ? planificacion.detalle(idVigente) : Promise.resolve(null)), [idVigente, recargas])
   const arrastradas = useDatos(() => planificacion.arrastradas(), [])
+  // D-52: versiones de la proyección con su planificación. El usuario Consulta no ve el panel: solo la vigente.
+  const versiones = useDatos<VersionesSemana | null>(
+    () => (esPlanificador ? planificacion.versionesProyeccion(lunes) : Promise.resolve(null)), [lunes, esPlanificador, recargas])
 
-  useEffect(() => { setResultado(null); setMensaje(null); setError(null) }, [lunes])
+  useEffect(() => { setResultado(null); setMensaje(null); setError(null); setMarcadas([]) }, [lunes])
 
   const datos = plan.datos
   const cerrada = datos?.estado === 'CERRADA'
-  const filas = useMemo(() => (datos ? partidasDelPlan(datos.maquinas) : []), [datos])
+  /** La semana ya empezó (fecha local): volver a generar rehace también los días pasados. */
+  const semanaEmpezada = ahoraLocal().slice(0, 10) >= lunes
   const sinProyeccion = estado.datos !== null && estado.datos.proyeccion === null
+  const vs = versiones.datos?.lunes === lunes ? versiones.datos : null
+  // Cada versión no eliminada de la semana tiene su propio color (hay tantos colores como versiones permitidas).
+  if (vs) asignarColoresVersiones(vs.versiones.map((v) => v.version))
+  const mostrarPanel = vs !== null && !vs.cerrada && vs.versiones.length >= 2
+
+  // Versiones marcadas: como máximo dos y solo las que tienen planificación. Al abrir, la vigente.
+  const marcadasValidas = useMemo(() => {
+    if (!mostrarPanel || !vs) return []
+    const conPlan = vs.versiones.filter((v) => v.planificacion !== null)
+    const validas = marcadas.filter((n) => conPlan.some((v) => v.version === n)).slice(0, MAXIMO_MARCADAS)
+    if (validas.length > 0) return validas
+    const inicial = conPlan.find((v) => v.planificacion?.esVigente) ?? conPlan[0]
+    return inicial ? [inicial.version] : []
+  }, [mostrarPanel, vs, marcadas])
+  const idsMarcadas = marcadasValidas.map((n) => vs?.versiones.find((v) => v.version === n)?.planificacion?.id).filter((id): id is number => id !== undefined)
+  const claveMarcadas = idsMarcadas.join(',')
+  const detalles = useDatos<PlanificacionDetalle[]>(
+    () => Promise.all(claveMarcadas ? claveMarcadas.split(',').map((id) => planificacion.detalle(Number(id))) : []), [claveMarcadas, recargas])
+
+  const vistas: VersionMarcada[] = useMemo(() => {
+    if (!mostrarPanel) return datos ? [{ version: datos.versionProyeccion, plan: datos }] : []
+    const cargados = detalles.datos ?? []
+    return idsMarcadas.flatMap((id) => {
+      const d = cargados.find((x) => x.id === id)
+      return d ? [{ version: d.versionProyeccion, plan: d }] : []
+    }).sort((a, b) => a.version - b.version)   // siempre V1, V2... en orden de versión
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mostrarPanel, datos, detalles.datos, claveMarcadas])
+  const calendario = useMemo(() => compararVersiones(vistas), [vistas])
+  const principal = vistas[0]?.plan ?? null
+  const cargandoVistas = mostrarPanel ? detalles.cargando && vistas.length < idsMarcadas.length : plan.cargando && idVigente !== null
+
+  const asignadas = useMemo(() => filasConVersion(vistas, vistas.length > 1, 'ASIGNADA'), [vistas])
+  const sobrantes = useMemo(() => filasConVersion(vistas, vistas.length > 1, 'SOBRANTE'), [vistas])
+  const bloqueadas = useMemo(() => bloqueadasConVersion(vistas, vistas.length > 1), [vistas])
+
+  // Banner: hay una versión nueva de la proyección sin planificación; la vigente sigue basada en otra.
+  const nuevaSinGenerar = mostrarPanel && datos && vs
+    ? [...vs.versiones].reverse().find((v) => v.planificacion === null && v.version > datos.versionProyeccion) ?? null
+    : null
+  const vistaSinVigente = mostrarPanel && datos !== null && vistas.length > 0 && !vistas.some((v) => v.plan.esVigente)
 
   function cambiarTab(id: string) {
     setActiveTab(id)
@@ -78,16 +158,105 @@ export function PlanificacionSemanalPage() {
     setSearchParams(next, { replace: true })
   }
 
-  async function generar() {
+  async function recargarTodo() {
+    setRecargas((n) => n + 1)
+    await estado.recargar()
+  }
+
+  /** Genera con la versión vigente (botón principal) o con una versión del panel (D-52). */
+  async function generar(version?: VersionProyeccionPlan) {
     setConfirmando(null)
-    setGenerando(true)
+    setVersionPorGenerar(null)
+    setGenerando(version ? version.version : 'vigente')
     setError(null)
     setMensaje(null)
-    const r = await intentar(() => planificacion.generar(lunes))
-    setGenerando(false)
+    const r = await intentar(() => planificacion.generar(lunes, version?.idProyeccion))
+    setGenerando(null)
     if (!r.ok) { setError(r.error); return }
     setResultado(r.valor)
-    await estado.recargar()
+    const segundos = numero((r.valor.indicadores.tiempoEjecucionMs ?? 0) / 1000, 1)
+    avisar({
+      tipo: 'success',
+      titulo: r.valor.vigente
+        ? `Versión ${r.valor.numeroVersion} generada con la ${etiquetaVersion(r.valor.versionProyeccion)} y vigente, en ${segundos} s`
+        : `Versión ${r.valor.numeroVersion} generada con la ${etiquetaVersion(r.valor.versionProyeccion)} en ${segundos} s`,
+      detalle: <>
+        {!r.valor.vigente && <p>No es la vigente: se marcó junto a ella para compararlas. Para usarla, elige «Usar como vigente».</p>}
+        {r.valor.detenidaPorTiempo && <p className="text-warning">La búsqueda se detuvo al alcanzar el tiempo máximo de 60 s.</p>}
+      </>,
+      segundos: r.valor.vigente ? 6 : 10,
+    })
+    if (r.valor.advertencias.length > 0) avisar({ tipo: 'warning', titulo: 'Avisos de la generación', lista: r.valor.advertencias })
+    // Una versión no vigente se marca junto a la vigente para compararlas
+    if (!r.valor.vigente && datos) setMarcadas([datos.versionProyeccion, r.valor.versionProyeccion])
+    else setMarcadas([r.valor.versionProyeccion])
+    await recargarTodo()
+  }
+
+  function generarVersion(v: VersionProyeccionPlan) {
+    if (idVigente === null) setVersionPorGenerar(v)   // quedará como vigente: se confirma (RF59)
+    else void generar(v)
+  }
+
+  function alternarVersion(version: number) {
+    setMarcadas(() => {
+      const actuales = marcadasValidas
+      if (actuales.includes(version)) return actuales.length > 1 ? actuales.filter((n) => n !== version) : actuales
+      return actuales.length >= MAXIMO_MARCADAS ? actuales : [...actuales, version]
+    })
+  }
+
+  async function abrirCambioVigente(v: VersionProyeccionPlan) {
+    if (!v.planificacion) return
+    setError(null)
+    const r = await intentar(() => planificacion.contextoCambioVigente(v.planificacion!.id))
+    if (!r.ok) { setError(r.error); return }
+    setCambio(r.valor)
+  }
+
+  async function usarComoVigente(partidasEnMaquina: string[]) {
+    if (!cambio) return
+    const c = cambio
+    setEnviando(true)
+    const r = await intentar(() => planificacion.usarComoVigente(c.idCandidata, partidasEnMaquina))
+    setEnviando(false)
+    setCambio(null)
+    if (!r.ok) { setError(r.error); return }
+    if (r.valor.modo === 'DIRECTO') {
+      setResultado(null)
+      setMensaje(`La ${etiquetaVersion(c.versionProyeccion)} pasó a ser la planificación vigente (versión ${r.valor.numeroVersion}).`
+        + (c.versionProyeccionVigente ? ` La ${etiquetaVersion(c.versionProyeccionVigente)} quedó guardada; puedes volver a ella.` : ''))
+      setMarcadas([c.versionProyeccion])
+    } else if (r.valor.replanificacion) {
+      setPropuesta({ version: c.versionProyeccion, resultado: r.valor.replanificacion })
+    }
+    await recargarTodo()
+  }
+
+  async function confirmarPropuesta() {
+    if (!propuesta?.resultado.idPropuesta) return
+    const p = propuesta
+    setEnviando(true)
+    const r = await intentar(() => replanificacion.confirmar(p.resultado.idPropuesta!))
+    setEnviando(false)
+    setPropuesta(null)
+    if (!r.ok) { setError(r.error); return }
+    setResultado(null)
+    setMensaje(`La ${etiquetaVersion(p.version)} es ahora la planificación vigente (versión ${r.valor.numeroVersion}), re-planificada desde el ${fechaCorta(p.resultado.dia)}.`)
+    setMarcadas([p.version])
+    await recargarTodo()
+  }
+
+  async function descartarPropuesta() {
+    if (!propuesta?.resultado.idPropuesta) return
+    const id = propuesta.resultado.idPropuesta
+    setEnviando(true)
+    const r = await intentar(() => replanificacion.descartar(id))
+    setEnviando(false)
+    setPropuesta(null)
+    if (!r.ok) { setError(r.error); return }
+    setMensaje('Se descartó la re-planificación. La vigente no cambió.')
+    await recargarTodo()
   }
 
   async function exportar() {
@@ -112,24 +281,21 @@ export function PlanificacionSemanalPage() {
   }
   const motivoGenerar = motivoGenerarDeshabilitado()
 
-  const stats: SummaryStat[] = datos ? [
-    { id: 'asignadas', label: 'Partidas asignadas', value: String(datos.resumen.asignadas), icon: ListChecks },
-    { id: 'sobrantes', label: 'Partidas sobrantes', value: String(datos.resumen.sobrantes), icon: PackageMinus, tone: datos.resumen.sobrantes > 0 ? 'warning' : undefined },
-    { id: 'bloqueadas', label: 'Partidas bloqueadas', value: String(datos.resumen.bloqueadas), icon: Ban, tone: datos.resumen.bloqueadas > 0 ? 'danger' : undefined },
-    { id: 'equilibradas', label: 'Máquinas en su objetivo', value: `${datos.resumen.maquinasEnObjetivo}/${datos.resumen.totalMaquinas}`, icon: Gauge, tone: datos.resumen.maquinasEnObjetivo === datos.resumen.totalMaquinas ? 'success' : 'warning' },
-    { id: 'lavados', label: 'Lavados', value: String(datos.resumen.lavados), icon: Droplets },
-  ] : []
-
-  const asignadas = filas.filter((f) => f.clasificacion === 'ASIGNADA')
-  const sobrantes = filas.filter((f) => f.clasificacion === 'SOBRANTE')
   const tabs = TABS.map((tab) => {
-    if (!datos) return tab.id === 'arrastradas' ? { ...tab, count: arrastradas.datos?.length } : tab
+    if (!principal) return tab.id === 'arrastradas' ? { ...tab, count: arrastradas.datos?.length } : tab
     const conteo: Record<string, number | undefined> = {
-      asignadas: asignadas.length, sobrantes: sobrantes.length, bloqueadas: datos.bloqueadas.length,
-      arrastradas: arrastradas.datos?.length, alertas: datos.alertas.length,
+      asignadas: asignadas.length, sobrantes: sobrantes.length, bloqueadas: bloqueadas.length,
+      arrastradas: arrastradas.datos?.length, alertas: principal.alertas.length,
     }
     return { ...tab, count: conteo[tab.id] }
   })
+
+  const panel = mostrarPanel && vs ? (
+    <PanelVersiones versiones={vs.versiones} marcadas={marcadasValidas} onAlternar={alternarVersion}
+      onGenerar={generarVersion} onUsarComoVigente={(v) => void abrirCambioVigente(v)}
+      generando={typeof generando === 'number' ? generando : null}
+      bloqueado={generando !== null ? 'Se está generando una planificación' : estado.datos?.propuestaPendiente ? 'Hay una re-planificación propuesta sin confirmar' : null} />
+  ) : undefined
 
   return (
     <>
@@ -152,13 +318,13 @@ export function PlanificacionSemanalPage() {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <WeekSelector />
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={() => setConfirmando('generar')} disabled={motivoGenerar !== null || generando}
-            title={motivoGenerar ?? 'Ejecuta el algoritmo con los datos registrados de la semana'}
+          <button type="button" onClick={() => setConfirmando('generar')} disabled={motivoGenerar !== null || generando !== null}
+            title={motivoGenerar ?? (datos ? `Vuelve a generar la planificación vigente con su proyección (${etiquetaVersion(datos.versionProyeccion)})` : 'Ejecuta el algoritmo con los datos registrados de la semana')}
             className={`${btnBase} bg-accent text-accent-ink hover:opacity-90`}>
-            {generando ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}
-            {generando ? 'Generando…' : datos ? 'Volver a generar' : 'Generar planificación'}
+            {generando === 'vigente' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}
+            {generando === 'vigente' ? 'Generando…' : datos ? 'Volver a generar' : 'Generar planificación'}
           </button>
-          <button type="button" onClick={exportar} disabled={!datos} title={datos ? 'Descarga esta planificación en Excel' : 'No hay planificación vigente'}
+          <button type="button" onClick={exportar} disabled={!datos} title={datos ? 'Descarga la planificación vigente en Excel' : 'No hay planificación vigente'}
             className={`${btnBase} border border-line bg-panel text-ink hover:bg-panel-muted`}>
             <Download className="h-4 w-4" aria-hidden="true" />Exportar
           </button>
@@ -171,18 +337,45 @@ export function PlanificacionSemanalPage() {
       </div>
 
       <AvisoError error={error ?? estado.error ?? (plan.error?.status === 404 ? null : plan.error)} onCerrar={() => setError(null)} />
-      {estado.datos?.propuestaPendiente && (
-        <div role="status" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/40 bg-warning-soft p-3.5 text-sm text-warning">
-          <p className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
-            Hay una re-planificación propuesta (versión {estado.datos.propuestaPendiente.numeroVersion}) sin confirmar. Mientras tanto no se puede volver a generar ni cerrar la semana.</p>
-          <Link to="/incidencias" className={`${btnBase} border border-line bg-panel text-ink hover:bg-panel-muted`}>Revisar la propuesta</Link>
+      {estado.datos?.propuestaPendiente && !propuesta && estado.datos.planificacionVigente && (
+        <section aria-labelledby="titulo-propuesta" className="mb-6 rounded-2xl border border-warning/40 bg-panel p-5">
+          <h2 id="titulo-propuesta" className="mb-1 flex items-center gap-2 text-base font-semibold text-ink"><RefreshCw className="h-5 w-5 text-warning" aria-hidden="true" />
+            Re-planificación propuesta por las incidencias</h2>
+          <p className="mb-4 text-sm text-ink-soft">Revisa qué cambia frente a la planificación vigente y confírmala o descártala hoy. Mientras tanto no se puede volver a generar ni cerrar la semana. Las incidencias se registran en <Link to="/incidencias" className="text-accent hover:underline">Incidencias</Link>.</p>
+          <PropuestaReplanificacion lunes={lunes} idVigente={estado.datos.planificacionVigente.id} idPropuesta={estado.datos.propuestaPendiente.id}
+            numeroVersion={estado.datos.propuestaPendiente.numeroVersion} resultado={null} esPlanificador={esPlanificador}
+            onTerminar={async (texto) => { if (texto) setMensaje(texto); await recargarTodo() }} onError={setError} />
+        </section>
+      )}
+      {datos && !cerrada && (estado.datos?.maquinasCambiadas.length ?? 0) > 0 && (
+        <div role="status" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/30 bg-accent-soft p-3.5 text-sm text-ink">
+          <p className="flex items-center gap-2"><Info className="h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
+            <span>Cambiaste las tonalidades que acepta {estado.datos!.maquinasCambiadas.join(', ')} después de generar esta planificación.
+              {semanaEmpezada ? ' La semana ya empezó: el cambio se aplica desde la próxima planificación.' : ' Vuelve a generar para aplicarlo.'}</span></p>
+          {!semanaEmpezada && esPlanificador && (
+            <button type="button" onClick={() => setConfirmando('generar')} disabled={motivoGenerar !== null || generando !== null}
+              title={motivoGenerar ?? 'Vuelve a generar la semana con la configuración actual de las máquinas'}
+              className={`${btnBase} bg-accent text-accent-ink hover:opacity-90`}><Play className="h-4 w-4" aria-hidden="true" />Volver a generar</button>
+          )}
+        </div>
+      )}
+      {nuevaSinGenerar && datos && (
+        <div role="status" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/30 bg-accent-soft p-3.5 text-sm text-ink">
+          <p className="flex items-center gap-2"><Info className="h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
+            <span>Subiste una proyección nueva (<EtiquetaVersion versiones={[nuevaSinGenerar.version]} className="text-sm" />). La planificación que ves sigue basada en la <EtiquetaVersion versiones={[datos.versionProyeccion]} className="text-sm" />.</span></p>
+          <button type="button" onClick={() => generarVersion(nuevaSinGenerar)} disabled={motivoGenerar !== null || generando !== null}
+            title={motivoGenerar ?? `Genera la planificación de la ${etiquetaVersion(nuevaSinGenerar.version)} sin cambiar la vigente`}
+            className={`${btnBase} bg-accent text-accent-ink hover:opacity-90`}>
+            {generando === nuevaSinGenerar.version ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}
+            Generar {etiquetaVersion(nuevaSinGenerar.version)}
+          </button>
         </div>
       )}
       {estado.datos?.stockDesactualizado && !resultado && (
         <div role="alert" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/40 bg-warning-soft p-3.5 text-sm text-warning">
           <p className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />{estado.datos.stockDesactualizado}</p>
           {esPlanificador && (
-            <button type="button" onClick={() => setConfirmando('generar')} disabled={motivoGenerar !== null || generando}
+            <button type="button" onClick={() => setConfirmando('generar')} disabled={motivoGenerar !== null || generando !== null}
               title={motivoGenerar ?? 'Vuelve a generar la planificación con el saldo actual de las bolsas'}
               className={`${btnBase} bg-accent text-accent-ink hover:opacity-90`}>
               <Play className="h-4 w-4" aria-hidden="true" />Generar
@@ -190,32 +383,32 @@ export function PlanificacionSemanalPage() {
           )}
         </div>
       )}
-      {mensaje && <p role="status" className="mb-5 flex items-center gap-2 rounded-xl border border-success/40 bg-success-soft p-3.5 text-sm text-success"><CheckCircle2 className="h-4 w-4" />{mensaje}</p>}
-      {resultado && (
-        <div role="status" className="mb-5 rounded-xl border border-success/40 bg-success-soft p-4 text-sm text-success">
-          <p className="flex items-center gap-2 font-medium"><CheckCircle2 className="h-4 w-4" />
-            Versión {resultado.numeroVersion} generada y vigente, en {numero((resultado.indicadores.tiempoEjecucionMs ?? 0) / 1000, 1)} s
-          </p>
-          {resultado.detenidaPorTiempo && <p className="mt-1 text-warning">La búsqueda se detuvo al alcanzar el tiempo máximo de 60 s.</p>}
-        </div>
-      )}
-      {resultado && <ListaAdvertencias titulo="Avisos de la generación" avisos={resultado.advertencias} />}
-
       {datos && (
         <div className="mb-4 flex flex-wrap items-center gap-3 text-sm text-ink-soft">
           <StatusPill tone={TONO_PLANIFICACION[datos.estado]} label={ESTADO_PLANIFICACION[datos.estado]} />
-          <span>Versión {datos.numeroVersion} · generada el {fechaHora(datos.fechaGeneracion)} · proyección v{datos.versionProyeccion}</span>
+          <span>Versión {datos.numeroVersion} · generada el {fechaHora(datos.fechaGeneracion)} · proyección <EtiquetaVersion versiones={[datos.versionProyeccion]} className="text-sm" /></span>
           {datos.fechaCierre && <span>· cerrada el {fechaHora(datos.fechaCierre)}</span>}
         </div>
       )}
-      {datos && <div className="mb-6"><SummaryBar stats={stats} /></div>}
+      {vistaSinVigente && datos && (
+        <p role="status" className="mb-4 flex items-center gap-2 rounded-xl border border-line bg-panel-muted/60 p-3 text-sm text-ink-soft">
+          <Info className="h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
+          Estás viendo una versión que no es la vigente. Exportar, el cierre y el usuario Consulta usan la vigente (<EtiquetaVersion versiones={[datos.versionProyeccion]} className="text-sm" />).
+        </p>
+      )}
+      {vistas.length > 1
+        ? <div className="mb-6"><BarraIndicadoresVersiones marcadas={vistas} /></div>
+        : principal && <div className="mb-6"><IndicadoresPlan plan={principal} /></div>}
 
       {estado.cargando && !estado.datos ? <Cargando /> : (
         <>
           <Tabs tabs={tabs} activeId={activeTab} onChange={cambiarTab} wrap />
-          {plan.cargando && idVigente ? <Cargando texto="Cargando la planificación…" /> : (
-            <ContenidoPestana tab={activeTab} plan={datos} sinProyeccion={sinProyeccion} asignadas={asignadas} sobrantes={sobrantes}
-              arrastradas={arrastradas.datos ?? []} esPlanificador={esPlanificador} onCompletar={completarArrastrada} />
+          {cargandoVistas ? <Cargando texto="Cargando la planificación…" /> : (
+            <ContenidoPestana tab={activeTab} plan={principal} calendario={calendario} panel={panel} sinProyeccion={sinProyeccion}
+              asignadas={asignadas} sobrantes={sobrantes} bloqueadas={bloqueadas} versionesVisibles={vistas.length > 1 ? vistas.map((v) => v.version) : []}
+              arrastradas={arrastradas.datos ?? []} esPlanificador={esPlanificador} onCompletar={completarArrastrada}
+              recomendaciones={<RecomendacionesTejido lunes={lunes} esPlanificador={esPlanificador} hayVigente={!!datos}
+                versiones={vistas.map((v) => ({ version: v.version, idPlanificacion: v.plan.id }))} />} />
           )}
         </>
       )}
@@ -224,15 +417,26 @@ export function PlanificacionSemanalPage() {
         open={confirmando === 'generar'}
         title={datos ? 'Volver a generar la planificación' : 'Generar la planificación de la semana'}
         description={datos
-          ? <>Se ejecuta el algoritmo con los datos actuales de la semana del {etiquetaSemana(lunes)}. La versión {datos.numeroVersion} deja de ser vigente (se conserva en el historial) y la nueva pasa a ser la planificación vigente.</>
+          ? <>Se ejecuta el algoritmo con los datos actuales de la semana del {etiquetaSemana(lunes)} y la proyección de la vigente ({etiquetaVersion(datos.versionProyeccion)}). La versión {datos.numeroVersion} deja de ser vigente (se conserva en el historial) y la nueva pasa a ser la planificación vigente.</>
           : <>Se ejecuta el algoritmo con los datos registrados de la semana del {etiquetaSemana(lunes)}. El resultado queda como la planificación vigente.</>}
         confirmLabel={datos ? 'Volver a generar' : 'Generar'}
-        onConfirm={generar}
+        onConfirm={() => void generar()}
         onCancel={() => setConfirmando(null)}
       />
+      <ConfirmDialog
+        open={versionPorGenerar !== null}
+        title={`Generar la planificación de la ${versionPorGenerar ? etiquetaVersion(versionPorGenerar.version) : ''}`}
+        description={<>La semana del {etiquetaSemana(lunes)} no tiene planificación vigente, así que el resultado quedará como la vigente.</>}
+        confirmLabel="Generar"
+        onConfirm={() => versionPorGenerar && void generar(versionPorGenerar)}
+        onCancel={() => setVersionPorGenerar(null)}
+      />
+      {cambio && <DialogoCambioVigente contexto={cambio} enviando={enviando} onConfirmar={(p) => void usarComoVigente(p)} onCancelar={() => setCambio(null)} />}
+      {propuesta && <DialogoPropuestaVersion version={propuesta.version} resultado={propuesta.resultado} enviando={enviando}
+        onConfirmar={() => void confirmarPropuesta()} onDescartar={() => void descartarPropuesta()} onDespues={() => setPropuesta(null)} />}
       {confirmando === 'cerrar' && datos && (
         <DialogoCierre plan={datos} onCancelar={() => setConfirmando(null)}
-          onCerrado={async (texto) => { setConfirmando(null); setMensaje(texto); await Promise.all([estado.recargar(), arrastradas.recargar(), plan.recargar()]); cambiarTab('arrastradas') }}
+          onCerrado={async (texto) => { setConfirmando(null); setMensaje(texto); setMarcadas([]); await Promise.all([recargarTodo(), arrastradas.recargar()]); cambiarTab('arrastradas') }}
           onError={(e) => { setConfirmando(null); setError(e) }} />
       )}
     </>
@@ -242,15 +446,27 @@ export function PlanificacionSemanalPage() {
 interface ContenidoProps {
   tab: string
   plan: PlanificacionDetalle | null
+  calendario: CalendarioComparado
+  panel: ReactNode
   sinProyeccion: boolean
-  asignadas: ReturnType<typeof partidasDelPlan>
-  sobrantes: ReturnType<typeof partidasDelPlan>
+  asignadas: FilaPartidaPlan[]
+  sobrantes: FilaPartidaPlan[]
+  bloqueadas: BloqueadaConVersion[]
+  /** Versiones mostradas cuando hay panel de versiones; vacío con una sola proyección. */
+  versionesVisibles: number[]
   arrastradas: import('@/api/tipos').Arrastrada[]
   esPlanificador: boolean
   onCompletar: (numeroPartida: string) => void
+  /** Pestaña Recomendaciones (RF30, D-56), armada con las versiones marcadas. */
+  recomendaciones: ReactNode
 }
 
-function ContenidoPestana({ tab, plan, sinProyeccion, asignadas, sobrantes, arrastradas, esPlanificador, onCompletar }: ContenidoProps) {
+function NotaVersion({ versiones, texto }: { versiones: number[]; texto: string }) {
+  if (versiones.length === 0) return null
+  return <p className="mb-3 flex items-center gap-1.5 text-xs text-ink-faint">{texto} <EtiquetaVersion versiones={versiones} className="text-xs" /></p>
+}
+
+function ContenidoPestana({ tab, plan, calendario, panel, sinProyeccion, asignadas, sobrantes, bloqueadas, versionesVisibles, arrastradas, esPlanificador, onCompletar, recomendaciones }: ContenidoProps) {
   if (tab === 'arrastradas') return <Arrastradas filas={arrastradas} esPlanificador={esPlanificador} onCompletar={onCompletar} />
   if (!plan) {
     if (tab === 'calendario' && sinProyeccion) return (
@@ -261,21 +477,24 @@ function ContenidoPestana({ tab, plan, sinProyeccion, asignadas, sobrantes, arra
         <Link to="/datos-semanales" className="mt-5 inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-accent-ink hover:opacity-90">Ir a carga de datos</Link>
       </div>
     )
-    return <EmptyPlanState />
+    return <>{panel && <div className="mb-3 flex flex-wrap items-center gap-2">{panel}</div>}<EmptyPlanState /></>
   }
+  const primera = versionesVisibles.slice(0, 1)
   switch (tab) {
     case 'asignadas':
-      return <div className="space-y-5"><PartidasAsignadasDashboard plan={plan} /><ListaPartidasPlan filas={asignadas} vacio="No hay partidas asignadas." /></div>
+      return <div className="space-y-5"><NotaVersion versiones={primera} texto="Resumen de la versión" /><PartidasAsignadasDashboard plan={plan} /><ListaPartidasPlan filas={asignadas} vacio="No hay partidas asignadas." /></div>
     case 'sobrantes':
-      return <><p className="mb-4 text-sm text-ink-soft">Partidas conformadas que exceden el objetivo semanal de su máquina o llegaron cuando los días restantes ya estaban llenos. También aparecen en rojo en el calendario, en su primer día disponible.</p><ListaPartidasPlan filas={sobrantes} vacio="No hay partidas sobrantes." /></>
+      return <><p className="mb-4 text-sm text-ink-soft">Partidas conformadas que exceden el objetivo semanal de su máquina o llegaron cuando los días restantes ya estaban llenos. También aparecen en rojo en el calendario, en su primer día disponible.{versionesVisibles.length > 1 && ' La columna Versión indica en cuál lo es; si está igual en ambas, aparece una sola vez.'}</p><ListaPartidasPlan filas={sobrantes} vacio="No hay partidas sobrantes." /></>
     case 'bloqueadas':
-      return <><p className="mb-4 text-sm text-ink-soft">La bolsa de al menos uno de sus artículos tuvo kilos en la semana, pero no alcanzaron para completarlas. No consumen tela y se vuelven a evaluar la semana siguiente.</p><BloqueadasTable filas={plan.bloqueadas} /></>
+      return <><p className="mb-4 text-sm text-ink-soft">La bolsa de al menos uno de sus artículos tuvo kilos en la semana, pero no alcanzaron para completarlas. No consumen tela y se vuelven a evaluar la semana siguiente.{versionesVisibles.length > 1 && ' La columna Versión indica en cuál está bloqueada.'}</p><BloqueadasTable filas={bloqueadas} /></>
+    case 'recomendaciones':
+      return recomendaciones
     case 'alertas':
-      return <AlertasList alertas={plan.alertas} />
+      return <><NotaVersion versiones={primera} texto="Alertas de la versión" /><AlertasList alertas={plan.alertas} /></>
     case 'bolsas':
-      return <Bolsas idPlanificacion={plan.id} />
+      return <><NotaVersion versiones={primera} texto="Bolsas de la versión" /><Bolsas idPlanificacion={plan.id} /></>
     default:
-      return <><PlanningGridLegend /><PlanningGrid dias={plan.dias} maquinas={plan.maquinas} /></>
+      return <CalendarioPlanificacion calendario={calendario} panel={panel} />
   }
 }
 

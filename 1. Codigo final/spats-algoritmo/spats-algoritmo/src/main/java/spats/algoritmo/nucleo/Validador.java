@@ -70,7 +70,7 @@ public final class Validador {
             int m = s.maquina[p];
             boolean compatible = false;
             for (int c : I.compat[p]) if (c == m) compatible = true;
-            if (!compatible) err.add("Asignación: partida asignada a una máquina fuera de su barca o sin día hábil desde que está disponible");
+            if (!compatible) err.add("Asignación: partida asignada a una máquina no compatible o sin día hábil desde que está disponible");
             if (cal.dia[p] < 1 || cal.dia[p] > I.ND) { err.add("Calendario: partida sin día"); continue; }
             if (cal.dia[p] < s.diaConformacion[p]) err.add("Disponibilidad temporal: partida ubicada antes de estar disponible");
             if (cal.dia[p] < Math.max(I.diaInicio, I.desde[p]))

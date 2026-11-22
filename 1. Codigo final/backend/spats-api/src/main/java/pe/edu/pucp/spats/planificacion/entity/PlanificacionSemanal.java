@@ -120,6 +120,22 @@ public class PlanificacionSemanal {
         return p;
     }
 
+    /**
+     * Planificación generada con una versión de la proyección distinta de la de la vigente (D-52): no es vigente
+     * hasta que el planificador la usa como vigente.
+     */
+    public static PlanificacionSemanal candidata(Semana semana, ProyeccionTejeduria proyeccion, int numeroVersion,
+                                                 LocalDateTime fechaGeneracion, BigDecimal valorFuncionObjetivo,
+                                                 BigDecimal desbalanceSemanal, BigDecimal desbalanceDiario,
+                                                 int numeroLavados, int evaluaciones, long tiempoEjecucionMs) {
+        PlanificacionSemanal p = new PlanificacionSemanal(semana, proyeccion, numeroVersion, fechaGeneracion,
+                TipoGeneracion.INICIAL, valorFuncionObjetivo, desbalanceSemanal, desbalanceDiario, numeroLavados,
+                evaluaciones, tiempoEjecucionMs);
+        p.esVigente = false;
+        p.estado = EstadoPlanificacion.CANDIDATA;
+        return p;
+    }
+
     public Integer getId() { return id; }
     public Semana getSemana() { return semana; }
     public ProyeccionTejeduria getProyeccion() { return proyeccion; }
@@ -140,6 +156,20 @@ public class PlanificacionSemanal {
     public boolean abierta() { return estado == EstadoPlanificacion.ABIERTA; }
 
     public boolean propuesta() { return estado == EstadoPlanificacion.PROPUESTA; }
+
+    public boolean candidata() { return estado == EstadoPlanificacion.CANDIDATA; }
+
+    /** D-52: una candidata pasa a ser la vigente de la semana, abierta. */
+    public void usarComoVigente() {
+        this.esVigente = true;
+        this.estado = EstadoPlanificacion.ABIERTA;
+    }
+
+    /** D-52: la vigente deja de serlo porque se usa otra versión, pero se puede volver a ella (semana sin empezar). */
+    public void volverACandidata() {
+        this.esVigente = false;
+        this.estado = EstadoPlanificacion.CANDIDATA;
+    }
 
     /** El planificador confirma la re-planificación: pasa a vigente y abierta. */
     public void confirmar() {

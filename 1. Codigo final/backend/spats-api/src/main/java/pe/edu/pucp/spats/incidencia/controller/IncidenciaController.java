@@ -38,4 +38,18 @@ public class IncidenciaController {
                                         @Valid @RequestBody RegistrarIncidenciaRequest solicitud) {
         return servicio.registrar(lunes, solicitud);
     }
+
+    /** Anula una incidencia (D-57). Cuerpo opcional: {@code {"motivo": "..."}}. */
+    @PostMapping("/{id}/anulacion")
+    public IncidenciaResponse anular(@PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate lunes,
+                                     @PathVariable Integer id, @RequestBody(required = false) java.util.Map<String, String> cuerpo) {
+        return servicio.anular(lunes, id, cuerpo == null ? null : cuerpo.get("motivo"));
+    }
+
+    /** Cierra una incidencia pendiente sin re-planificar (D-54). Cuerpo opcional: {@code {"motivo": "..."}}. */
+    @PostMapping("/{id}/atencion")
+    public IncidenciaResponse atender(@PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate lunes,
+                                      @PathVariable Integer id, @RequestBody(required = false) java.util.Map<String, String> cuerpo) {
+        return servicio.atender(lunes, id, cuerpo == null ? null : cuerpo.get("motivo"));
+    }
 }

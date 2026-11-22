@@ -44,8 +44,11 @@ class RegresionInstanciasR22Test {
         ResultadoPlanificacion r = new PlanificadorSemanal().planificar(configuracion.datos(), configuracion.parametrosACO());
 
         assertThat(r.indicadores().incumplimientos()).isEmpty();
-        assertThat(r.indicadores().funcionObjetivo()).isEqualTo(fR23);
-        assertThat(r.indicadores().conformadas()).isEqualTo(conformadasR23);
+        // Pendiente por D-48: con el reparto diario proporcional, F (y por lo tanto la búsqueda) ya no coincide con el
+        // R2.3. La nueva línea base saldrá de la experimentación que se volverá a correr con esta regla; hasta entonces
+        // solo se comprueba que la solución sea factible y cumpla las restricciones de la base.
+        // assertThat(r.indicadores().funcionObjetivo()).isEqualTo(fR23);
+        // assertThat(r.indicadores().conformadas()).isEqualTo(conformadasR23);
 
         ResultadoTraducido t = TraductorResultado.traducir(configuracion.datos(), r);
         verificarRestriccionesDeLaBase(t);

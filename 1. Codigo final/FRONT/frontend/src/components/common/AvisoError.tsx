@@ -7,11 +7,11 @@ export function AvisoError({ error, onCerrar }: { error: ErrorApi | null; onCerr
   if (!error) return null
   const bloqueantes = error.problemas.filter((p) => p.bloqueante)
   return (
-    <div role="alert" className="mb-5 rounded-xl border border-danger/40 bg-danger-soft p-4 text-sm text-danger">
+    <div role="alert" className="mb-5 rounded-lg border border-l-[3px] border-line border-l-danger bg-danger-soft px-4 py-3 text-sm text-ink">
       <div className="flex items-start gap-2.5">
-        <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+        <CircleAlert className="mt-0.5 h-5 w-5 shrink-0 text-danger" aria-hidden="true" />
         <div className="min-w-0 flex-1">
-          <p className="font-medium">{error.message}</p>
+          <p className="font-semibold">{error.message}</p>
           {error.errores.length > 0 && (
             <ul className="mt-2 list-disc space-y-0.5 pl-5">{error.errores.map((e) => <li key={e.campo}>{e.mensaje}</li>)}</ul>
           )}
@@ -27,7 +27,7 @@ export function AvisoError({ error, onCerrar }: { error: ErrorApi | null; onCerr
             </div>
           )}</Paginado>}
         </div>
-        {onCerrar && <button type="button" onClick={onCerrar} aria-label="Cerrar aviso" className="shrink-0 hover:opacity-70"><X className="h-4 w-4" /></button>}
+        {onCerrar && <button type="button" onClick={onCerrar} aria-label="Cerrar aviso" className="shrink-0 p-0.5 text-ink-soft hover:text-ink"><X className="h-4 w-4" /></button>}
       </div>
     </div>
   )

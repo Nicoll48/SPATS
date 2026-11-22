@@ -50,9 +50,13 @@ public class CierreSemanaService {
     private final PropuestasPendientes propuestas;
     private final Clock reloj;
 
+    private final pe.edu.pucp.spats.planificacion.recomendacion.RecomendacionesTejidoService recomendaciones;
+
     public CierreSemanaService(PlanificacionSemanalRepository planificaciones, PlanificacionPartidaRepository partidas,
                                PartidaService partidaService, PedidoService pedidoService, BitacoraService bitacora,
-                               ReglasVigencia reglasVigencia, PropuestasPendientes propuestas, Clock reloj) {
+                               ReglasVigencia reglasVigencia, PropuestasPendientes propuestas, Clock reloj,
+            pe.edu.pucp.spats.planificacion.recomendacion.RecomendacionesTejidoService recomendaciones) {
+        this.recomendaciones = recomendaciones;
         this.planificaciones = planificaciones;
         this.partidas = partidas;
         this.partidaService = partidaService;
@@ -103,6 +107,7 @@ public class CierreSemanaService {
             if (completada) { completadas++; pedidos.add(partida.getPedido().getId()); } else arrastradas++;
         }
         plan.cerrar(LocalDateTime.now(reloj));
+        recomendaciones.conservarSoloVigente(plan.getSemana().getId(), plan.getId());   // D-56
         bitacora.registrar(TipoOperacion.CERRAR, "planificacion_semanal", plan.getId(),
                 "Semana " + plan.getSemana().getFechaInicio() + ": " + completadas + " completadas, " + arrastradas + " arrastradas");
         int pedidosCompletados = pedidoService.completarPedidosTerminados(pedidos);

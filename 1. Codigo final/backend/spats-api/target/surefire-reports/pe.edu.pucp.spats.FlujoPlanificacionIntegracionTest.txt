@@ -1,4 +1,11 @@
 -------------------------------------------------------------------------------
 Test set: pe.edu.pucp.spats.FlujoPlanificacionIntegracionTest
 -------------------------------------------------------------------------------
-Tests run: 1, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0 s -- in pe.edu.pucp.spats.FlujoPlanificacionIntegracionTest
+Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 33.91 s <<< FAILURE! -- in pe.edu.pucp.spats.FlujoPlanificacionIntegracionTest
+pe.edu.pucp.spats.FlujoPlanificacionIntegracionTest.flujoCompleto -- Time elapsed: 5.097 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+
+expected: 1279.75
+ but was: 1274.750
+	at pe.edu.pucp.spats.FlujoPlanificacionIntegracionTest.flujoCompleto(FlujoPlanificacionIntegracionTest.java:104)
+

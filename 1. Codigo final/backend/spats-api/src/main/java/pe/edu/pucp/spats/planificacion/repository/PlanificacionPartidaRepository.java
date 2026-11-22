@@ -28,6 +28,17 @@ public interface PlanificacionPartidaRepository extends JpaRepository<Planificac
             """)
     List<PlanificacionPartida> arrastradasPendientes();
 
+    /** Partidas ubicadas en la máquina en planificaciones vigentes abiertas (D-51: aviso al cambiar sus tonalidades). */
+    @Query("""
+            select pp from PlanificacionPartida pp
+            join fetch pp.planificacion pl join fetch pl.semana
+            join fetch pp.partida p join fetch p.color
+            where pp.maquina.id = :idMaquina and pl.esVigente = true
+              and pl.estado = pe.edu.pucp.spats.planificacion.entity.Enumeraciones.EstadoPlanificacion.ABIERTA
+            order by pl.semana.fechaInicio, pp.diaAbastecimiento, pp.ordenSecuencia
+            """)
+    List<PlanificacionPartida> enVigentesAbiertasDeLaMaquina(Integer idMaquina);
+
     @org.springframework.data.jpa.repository.Modifying
     @Query("delete from PlanificacionPartida pp where pp.planificacion.id = :idPlanificacion")
     void eliminarDe(Integer idPlanificacion);

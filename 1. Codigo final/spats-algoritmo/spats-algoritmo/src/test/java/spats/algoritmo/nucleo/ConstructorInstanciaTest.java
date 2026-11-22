@@ -78,7 +78,7 @@ class ConstructorInstanciaTest {
         assertEquals("OK", I.partidas[0].codigo());
         assertEquals(2, I.excluidas.size());
         assertTrue(I.excluidas.stream().anyMatch(b -> b.partida().codigo().equals("SINTELA") && b.motivo().equals(PartidaExcluida.SIN_TELA)));
-        assertTrue(I.excluidas.stream().anyMatch(b -> b.partida().codigo().equals("SINMAQ") && b.motivo().equals(PartidaExcluida.SIN_MAQUINA)));
+        assertTrue(I.excluidas.stream().anyMatch(b -> b.partida().codigo().equals("SINMAQ") && b.motivo().equals(PartidaExcluida.SIN_MAQUINA_COMPATIBLE)));
     }
 
     @Test

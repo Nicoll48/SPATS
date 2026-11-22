@@ -81,6 +81,12 @@ class ColoniaHormigasTest {
         assertTrue(Validador.validar(dosMaquinas(), r.solucion(), r.evaluacion()).isEmpty());
     }
 
+    /*
+     * D-48 no cambia los valores esperados. El reparto 4 y 4 lo decide el término semanal: 4 y 4 da
+     * E_S = 2 × (4 − 16)² = 288, y cualquier otro reparto de las 8 partidas da más (por ejemplo, 5 y 3 da
+     * (5 − 16)² + (3 − 16)² = 290). El nuevo reparto diario solo cambia en qué días cae cada partida, no cuántas
+     * recibe cada máquina, así que E_S sigue siendo 288.
+     */
     @Test
     @DisplayName("PU-27 La colonia reparte la carga entre las máquinas de una misma barca")
     void equilibrio() {

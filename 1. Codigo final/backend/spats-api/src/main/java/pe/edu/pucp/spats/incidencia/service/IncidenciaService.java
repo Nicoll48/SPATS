@@ -42,11 +42,18 @@ public class IncidenciaService {
     private final UsuarioRepository usuarios;
     private final UsuarioActual usuarioActual;
     private final BitacoraService bitacora;
+    private final pe.edu.pucp.spats.planificacion.motor.PropuestasPendientes propuestas;
+
+    private final pe.edu.pucp.spats.auditoria.repository.BitacoraAuditoriaRepository bitacoraConsultas;
 
     public IncidenciaService(IncidenciaRepository incidencias, SemanaService semanas,
                              PlanificacionSemanalRepository planificaciones, MaquinaService maquinas,
                              PartidaService partidas, PedidoService pedidos, UsuarioRepository usuarios,
-                             UsuarioActual usuarioActual, BitacoraService bitacora) {
+                             UsuarioActual usuarioActual, BitacoraService bitacora,
+                             pe.edu.pucp.spats.planificacion.motor.PropuestasPendientes propuestas,
+                             pe.edu.pucp.spats.auditoria.repository.BitacoraAuditoriaRepository bitacoraConsultas) {
+        this.bitacoraConsultas = bitacoraConsultas;
+        this.propuestas = propuestas;
         this.incidencias = incidencias;
         this.semanas = semanas;
         this.planificaciones = planificaciones;
@@ -61,6 +68,66 @@ public class IncidenciaService {
     public List<IncidenciaResponse> deLaSemana(LocalDate lunes) {
         return semanas.buscar(lunes).map(s -> incidencias.deLaSemana(s.getId()).stream().map(i -> aResponse(i, null)).toList())
                 .orElse(List.of());
+    }
+
+    /**
+     * Cierra una incidencia PENDIENTE sin re-planificar (D-54): el planificador la resolvió en planta (por ejemplo,
+     * tiñó las partidas en otra máquina) o ya no aplica. Pasa a ATENDIDA y ya no se considera al re-planificar ni al
+     * generar. No se permite con una propuesta de re-planificación pendiente, que ya la incluye.
+     */
+    @Transactional
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('PLANIFICADOR')")
+    public IncidenciaResponse atender(LocalDate lunes, Integer id, String motivo) {
+        Semana semana = semanas.buscar(lunes).orElseThrow(this::sinPlanVigente);
+        Incidencia i = incidencias.findById(id).orElseThrow(() -> new pe.edu.pucp.spats.comun.error.RecursoNoEncontradoException(
+                "INCIDENCIA_NO_ENCONTRADA", "No existe la incidencia " + id + "."));
+        if (!i.getPlanificacionOrigen().getSemana().getId().equals(semana.getId()))
+            throw new pe.edu.pucp.spats.comun.error.ReglaNegocioException("INCIDENCIA_DE_OTRA_SEMANA", "La incidencia " + id + " es de otra semana.");
+        if (i.getEstado() != pe.edu.pucp.spats.incidencia.entity.EstadoIncidencia.PENDIENTE)
+            throw new pe.edu.pucp.spats.comun.error.ConflictoException("INCIDENCIA_NO_PENDIENTE",
+                    "Solo se cierra una incidencia pendiente; esta ya está " + i.getEstado().name().toLowerCase() + ".");
+        propuestas.exigirSinPendiente(semana.getId(), "cerrar una incidencia sin re-planificar");
+        bitacora.registrarCambio("incidencia", i.getId(), "estado", i.getEstado(), pe.edu.pucp.spats.incidencia.entity.EstadoIncidencia.ATENDIDA);
+        i.atender();
+        String nota = motivo == null || motivo.isBlank() ? "sin motivo" : motivo.strip();
+        bitacora.registrar(pe.edu.pucp.spats.auditoria.entity.TipoOperacion.MODIFICAR, "incidencia", i.getId(),
+                "Cerrada sin re-planificar: " + (nota.length() > 200 ? nota.substring(0, 200) : nota));
+        return aResponse(i, null);
+    }
+
+    /**
+     * Anula una incidencia (D-57): registrada por error o que al final no ocurrió. Pasa a ANULADA y nunca más se aplica.
+     * Si ya estaba CONSIDERADA, la planificación vigente no cambia sola: su efecto se deshace al volver a generar la
+     * semana (si aún no empieza) o al re-planificar desde hoy. Un cambio de prioridad considerado devuelve al pedido su
+     * fecha de entrega anterior. No se permite con una propuesta de re-planificación pendiente.
+     */
+    @Transactional
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('PLANIFICADOR')")
+    public IncidenciaResponse anular(LocalDate lunes, Integer id, String motivo) {
+        Semana semana = semanas.buscar(lunes).orElseThrow(this::sinPlanVigente);
+        Incidencia i = incidencias.findById(id).orElseThrow(() -> new pe.edu.pucp.spats.comun.error.RecursoNoEncontradoException(
+                "INCIDENCIA_NO_ENCONTRADA", "No existe la incidencia " + id + "."));
+        if (!i.getPlanificacionOrigen().getSemana().getId().equals(semana.getId()))
+            throw new pe.edu.pucp.spats.comun.error.ReglaNegocioException("INCIDENCIA_DE_OTRA_SEMANA", "La incidencia " + id + " es de otra semana.");
+        if (i.getEstado() == pe.edu.pucp.spats.incidencia.entity.EstadoIncidencia.ANULADA)
+            throw new pe.edu.pucp.spats.comun.error.ConflictoException("INCIDENCIA_ANULADA", "La incidencia ya está anulada.");
+        if (planificaciones.findBySemanaIdAndEsVigenteTrue(semana.getId()).map(p -> !p.abierta()).orElse(false))
+            throw new pe.edu.pucp.spats.comun.error.ConflictoException("SEMANA_CERRADA", "La semana ya está cerrada; sus incidencias quedan en solo lectura.");
+        propuestas.exigirSinPendiente(semana.getId(), "anular una incidencia");
+        boolean considerada = i.getEstado() == pe.edu.pucp.spats.incidencia.entity.EstadoIncidencia.CONSIDERADA;
+        bitacora.registrarCambio("incidencia", i.getId(), "estado", i.getEstado(), pe.edu.pucp.spats.incidencia.entity.EstadoIncidencia.ANULADA);
+        i.anular();
+        if (considerada && i.getTipoIncidencia() == pe.edu.pucp.spats.incidencia.entity.TipoIncidencia.CAMBIO_PRIORIDAD
+                && java.util.Objects.equals(i.getPedido().getFechaEntrega(), i.getNuevaFechaEntrega())) {
+            List<String> anteriores = bitacoraConsultas.valoresAnteriores("pedido", i.getPedido().getId(), "fecha_entrega",
+                    String.valueOf(i.getNuevaFechaEntrega()));
+            if (!anteriores.isEmpty() && anteriores.get(0) != null && !anteriores.get(0).isBlank())
+                pedidos.cambiarFechaEntregaPorPrioridad(i.getPedido(), LocalDate.parse(anteriores.get(0)));
+        }
+        String nota = motivo == null || motivo.isBlank() ? "sin motivo" : motivo.strip();
+        bitacora.registrar(pe.edu.pucp.spats.auditoria.entity.TipoOperacion.MODIFICAR, "incidencia", i.getId(),
+                "Anulada: " + (nota.length() > 200 ? nota.substring(0, 200) : nota));
+        return aResponse(i, null);
     }
 
     @Transactional

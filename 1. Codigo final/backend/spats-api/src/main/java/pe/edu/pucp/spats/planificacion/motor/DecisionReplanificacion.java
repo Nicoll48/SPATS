@@ -13,7 +13,7 @@ public final class DecisionReplanificacion {
     private DecisionReplanificacion() { }
 
     /**
-     * Si la vigente ya no es factible en el escenario nuevo, se propone la nueva. Si es factible, se propone la
+     * Si la vigente ya no es factible en la instancia nueva, se propone la nueva. Si es factible, se propone la
      * nueva solo si su F es menor; si no, se conserva la vigente.
      */
     public static Resultado decidir(Indicadores nueva, Indicadores vigente) {

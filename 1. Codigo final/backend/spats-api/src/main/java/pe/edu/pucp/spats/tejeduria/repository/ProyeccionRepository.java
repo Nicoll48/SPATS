@@ -15,8 +15,11 @@ public interface ProyeccionRepository extends JpaRepository<ProyeccionTejeduria,
     /** La de mayor número, aunque esté eliminada: define el número de la versión siguiente. */
     Optional<ProyeccionTejeduria> findFirstBySemanaIdOrderByVersionDesc(Integer idSemana);
 
-    /** La versión no eliminada con mayor número es la que se usa para planificar (D-06, D-46). */
+    /** La versión no eliminada con mayor número (D-46). */
     Optional<ProyeccionTejeduria> findFirstBySemanaIdAndEstadoNotOrderByVersionDesc(Integer idSemana, EstadoProyeccion excluido);
+
+    /** Versiones de la semana en un estado; VIGENTE es a lo más una (D-52). */
+    List<ProyeccionTejeduria> findBySemanaIdAndEstadoOrderByVersionDesc(Integer idSemana, EstadoProyeccion estado);
 
     List<ProyeccionTejeduria> findBySemanaIdOrderByVersionDesc(Integer idSemana);
 

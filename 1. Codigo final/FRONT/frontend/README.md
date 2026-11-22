@@ -33,4 +33,4 @@ En producción, `VITE_API_URL` indica la dirección base de la API (por ejemplo 
 | Textos de estados y clasificaciones | `src/lib/etiquetas.ts` |
 | Colores claro y oscuro | `src/index.css` |
 
-`_fuera_de_alcance/` guarda las pantallas y los datos simulados de la versión anterior que quedaron fuera del alcance del contexto (Escenarios, Reportes, parámetros en horas, proyección simulada y mock). No se compilan.
+`_fuera_de_alcance/` guarda las pantallas y los datos simulados de la versión anterior que quedaron fuera del alcance del contexto (Reportes, parámetros en horas, proyección simulada y mock). No se compilan.

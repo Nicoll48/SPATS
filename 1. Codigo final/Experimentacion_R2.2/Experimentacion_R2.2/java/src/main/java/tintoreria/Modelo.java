@@ -202,7 +202,11 @@ public final class Modelo {
         return s;
     }
 
-    /** Calendario: cada día 2 o 3 partidas completas hasta el objetivo; el exceso, Sobrante. */
+    /**
+     * Calendario (misma regla que el sistema, D-48): meta = min(objetivo, conformadas); la cuota del día
+     * hábil j es min(máximo, floor(meta*j/nk + desfase) - ubicadas), con desfase = ((m + semana ISO) mod M
+     * + 0.5)/M; el último día completa la meta. El exceso, Sobrante.
+     */
     public static Calendario calendario(Instancia I, Solucion s) {
         Calendario cal = new Calendario();
         cal.dia = new int[I.P]; Arrays.fill(cal.dia, -1);
@@ -222,19 +226,22 @@ public final class Modelo {
                 disp[t] = I.sigHabil[m][s.diaConf[idx[t]]];
                 libre[t] = disp[t] > 0;
             }
-            int R = I.O[m], L = I.L[m], U = I.U[m];
+            // Reparto proporcional y escalonado (D-48 del sistema): al cerrar el día hábil j de nk la
+            // máquina debe llevar floor(meta*j/nk + desfase) partidas (el último día, la meta).
+            int U = I.U[m];
             int[] hab = I.diasHabiles[m]; int nk = hab.length;
-            for (int jj = 0; jj < nk; jj++) {
-                if (R <= 0) break;
-                int d = hab[jj];
-                int cuota = (R - U >= L * (nk - jj - 1)) ? U : L;
-                if (cuota > R) cuota = R;
+            int meta = Math.min(I.O[m], n), ubicadas = 0;
+            double desfase = (((m + I.semana) % I.M) + 0.5) / I.M;   // m en base 0
+            for (int jj = 1; jj <= nk; jj++) {
+                int d = hab[jj - 1];
+                int metaHoy = jj == nk ? meta : (int) Math.floor((double) meta * jj / nk + desfase);
+                int cuota = Math.min(U, metaHoy - ubicadas);
                 int tom = 0;
                 for (int t = 0; t < n && tom < cuota; t++) if (libre[t] && disp[t] <= d) {
                     libre[t] = false; cal.dia[idx[t]] = d; tom++;
                 }
                 cal.nDia[m][d - 1] = tom;
-                R -= tom;
+                ubicadas += tom;
             }
             for (int t = 0; t < n; t++) if (cal.dia[idx[t]] < 0) {
                 cal.sobrante[idx[t]] = true;

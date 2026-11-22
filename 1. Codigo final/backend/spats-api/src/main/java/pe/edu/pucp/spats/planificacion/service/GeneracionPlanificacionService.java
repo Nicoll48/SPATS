@@ -49,18 +49,31 @@ public class GeneracionPlanificacionService {
         this.mapper = mapper;
     }
 
+    /** Genera con la versión VIGENTE de la proyección (o la última cargada, si la semana no tiene vigente). */
     @PreAuthorize("hasRole('PLANIFICADOR')")
     public GeneracionResponse generar(LocalDate lunes) {
+        return generar(lunes, null);
+    }
+
+    /**
+     * Genera la planificación de una versión de la proyección (D-52). Si la semana ya tiene una vigente generada con
+     * otra versión, la nueva queda como candidata y la vigente no cambia.
+     *
+     * @param idProyeccion versión de la proyección; null usa la VIGENTE
+     */
+    @PreAuthorize("hasRole('PLANIFICADOR')")
+    public GeneracionResponse generar(LocalDate lunes, Integer idProyeccion) {
         if (!enCurso.add(lunes))
             throw new ConflictoException("PLANIFICACION_EN_CURSO", "Ya se está generando la planificación de esta semana.");
         try {
-            EntradaPlanificacion entrada = lector.leer(lunes);
+            EntradaPlanificacion entrada = lector.leer(lunes, idProyeccion);
             ResultadoPlanificacion resultado = ejecutor.ejecutar(entrada.datos());
             ResultadoTraducido traducido = TraductorResultado.traducir(entrada.datos(), resultado);
             PlanificacionSemanal plan = guardado.guardar(entrada, traducido);
             List<String> advertencias = new ArrayList<>(entrada.advertencias());
             advertencias.addAll(traducido.advertencias());
-            return new GeneracionResponse(plan.getId(), plan.getNumeroVersion(), mapper.indicadores(plan),
+            return new GeneracionResponse(plan.getId(), plan.getNumeroVersion(), plan.isEsVigente(),
+                    plan.getProyeccion().getVersion(), mapper.indicadores(plan),
                     traducido.indicadores().detenidaPorTiempo(), List.copyOf(advertencias));
         } finally {
             enCurso.remove(lunes);

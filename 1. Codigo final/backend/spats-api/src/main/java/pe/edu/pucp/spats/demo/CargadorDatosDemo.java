@@ -101,7 +101,7 @@ public class CargadorDatosDemo implements ApplicationRunner {
         for (var m : base.maquinas()) {
             Barca barca = Barca.interpretar(m.barca()).orElseThrow();
             MaquinaTintoreria maquina = new MaquinaTintoreria(m.codigo(), BigDecimal.valueOf(m.capacidad()), barca.clasificacion(),
-                    m.objetivoSemanal(), barca.texto(), EstadoMaquina.OPERATIVA);
+                    m.objetivoSemanal(), barca.texto(), EstadoMaquina.OPERATIVA, java.util.EnumSet.allOf(TonalidadColor.class));
             em.persist(maquina);
             maquinasPorCodigo.put(m.codigo(), maquina);
         }

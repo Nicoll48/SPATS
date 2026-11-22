@@ -14,6 +14,7 @@ import pe.edu.pucp.spats.planificacion.entity.Enumeraciones.ClasificacionResulta
 import pe.edu.pucp.spats.planificacion.entity.Enumeraciones.EstadoConfirmacionCierre;
 import pe.edu.pucp.spats.planificacion.entity.Enumeraciones.EstadoPlanificacion;
 import pe.edu.pucp.spats.planificacion.entity.Enumeraciones.TipoGeneracion;
+import pe.edu.pucp.spats.tejeduria.entity.EstadoProyeccion;
 
 /**
  * Contrato JSON de la planificación semanal. Todo lo que muestra sale de lo guardado en la base; las
@@ -30,9 +31,14 @@ public final class PlanificacionDtos {
                                       BigDecimal desbalanceDiario, Integer numeroLavados, Integer evaluaciones,
                                       Long tiempoEjecucionMs) { }
 
-    /** Resultado de una generación: la versión creada y los avisos para el planificador. */
-    public record GeneracionResponse(Integer idPlanificacion, int numeroVersion, IndicadoresResponse indicadores,
-                                     boolean detenidaPorTiempo, List<String> advertencias) { }
+    /**
+     * Resultado de una generación: la versión creada y los avisos para el planificador.
+     *
+     * @param vigente           false si quedó como candidata porque se generó con otra versión de la proyección (D-52)
+     * @param versionProyeccion versión de la proyección con la que se generó (V1, V2, ...)
+     */
+    public record GeneracionResponse(Integer idPlanificacion, int numeroVersion, boolean vigente, int versionProyeccion,
+                                     IndicadoresResponse indicadores, boolean detenidaPorTiempo, List<String> advertencias) { }
 
     public record ResumenResponse(int asignadas, int sobrantes, int bloqueadas, int maquinasEnObjetivo,
                                   int totalMaquinas, int lavados) { }
@@ -62,9 +68,10 @@ public final class PlanificacionDtos {
                                               TipoComponente tipoComponente, BigDecimal kgRequeridos,
                                               BigDecimal kgSaldoFinalArticulo) { }
 
+    /** @param motivo motivo del algoritmo (D-51); null en versiones generadas antes de guardarlo */
     public record PartidaBloqueadaResponse(String numeroPartida, String numeroOp, LocalDate fechaEntrega,
                                            String color, TonalidadColor tonalidad, String barca, BigDecimal kg,
-                                           List<ComponenteBloqueadaResponse> componentes) { }
+                                           List<ComponenteBloqueadaResponse> componentes, String motivo) { }
 
     /** Distribución de Asignadas y Sobrantes por clasificación de color (RF40). */
     public record DistribucionColorResponse(ClasificacionColor clasificacionColor, int asignadas, int sobrantes) { }
@@ -102,15 +109,23 @@ public final class PlanificacionDtos {
     public record EstadoSemanaResponse(LocalDate lunes, LocalDate domingo, ProyeccionResumen proyeccion,
                                        PlanificacionResumen planificacionVigente, int versiones,
                                        boolean proyeccionDesactualizada, String stockDesactualizado,
-                                       PlanificacionResumen propuestaPendiente) { }
+                                       PlanificacionResumen propuestaPendiente, List<String> maquinasCambiadas) {
+        /** @param maquinasCambiadas máquinas con tonalidades aceptadas cambiadas después de generar la vigente (D-51) */
+        public EstadoSemanaResponse { maquinasCambiadas = maquinasCambiadas == null ? List.of() : List.copyOf(maquinasCambiadas); }
+    }
 
     // ------------------------------------------------------------ re-planificación (HU-18)
     /**
      * @param incidencias       incidencias PENDIENTE que se consideran juntas (RF52)
      * @param partidasEnMaquina partidas del día D que ya entraron a máquina: quedan fijas (D-31)
      */
+    /** @param porAnulacion re-planificar desde hoy para deshacer una incidencia anulada: no exige incidencias (D-57) */
     public record ReplanificacionRequest(@NotNull(message = "Indica las incidencias.") List<Integer> incidencias,
-                                         List<String> partidasEnMaquina) { }
+                                         List<String> partidasEnMaquina, Boolean porAnulacion) {
+        public ReplanificacionRequest(List<Integer> incidencias, List<String> partidasEnMaquina) {
+            this(incidencias, partidasEnMaquina, false);
+        }
+    }
 
     /** Partida ubicada hoy en la vigente: el planificador puede marcarla como ya en máquina. */
     public record PartidaDelDiaResponse(String numeroPartida, String maquina, ClasificacionResultado clasificacion,
@@ -127,8 +142,8 @@ public final class PlanificacionDtos {
      * Resultado de re-planificar (RF55). Con PROPUESTA, la versión queda guardada sin ser vigente hasta que se
      * confirme el mismo día. Con SE_CONSERVA_VIGENTE no se guarda nada.
      *
-     * @param fVigente         F de la vigente evaluada en el escenario nuevo (semana completa, D-28)
-     * @param vigenteFactible  false si la vigente ya no cumple las reglas en el escenario nuevo
+     * @param fVigente         F de la vigente evaluada sobre la misma instancia nueva (semana completa, D-28)
+     * @param vigenteFactible  false si la vigente ya no cumple las reglas en la instancia nueva
      */
     public record ReplanificacionResponse(ResultadoReplanificacion resultado, LocalDate dia, Integer idPropuesta,
                                           Integer numeroVersion, Integer idVigente, BigDecimal fNueva, BigDecimal fVigente,
@@ -138,6 +153,49 @@ public final class PlanificacionDtos {
 
     public record ConfirmacionResponse(Integer idPlanificacion, int numeroVersion, int incidenciasConsideradas,
                                        int pedidosActualizados) { }
+
+    // ------------------------------------------------------------ versiones de la proyección (D-52)
+    /** Planificación en uso de una versión de la proyección: la vigente o su candidata. */
+    public record PlanificacionDeVersionResponse(Integer id, int numeroVersion, EstadoPlanificacion estado, boolean esVigente,
+                                                 TipoGeneracion tipoGeneracion, LocalDateTime fechaGeneracion,
+                                                 boolean stockDesactualizado, IndicadoresResponse indicadores,
+                                                 int asignadas, int sobrantes, int bloqueadas) { }
+
+    /** @param planificacion null si la versión todavía no tiene planificación generada */
+    public record VersionProyeccionPlanResponse(Integer idProyeccion, int version, LocalDateTime fechaCarga,
+                                                EstadoProyeccion estado, BigDecimal kgTotales,
+                                                PlanificacionDeVersionResponse planificacion) { }
+
+    /**
+     * Versiones de la proyección de la semana con su planificación (panel de versiones).
+     *
+     * @param cerrada si la planificación de la semana ya se cerró: todo queda en solo lectura
+     */
+    public record VersionesSemanaResponse(LocalDate lunes, boolean cerrada, Integer idVigente,
+                                          List<VersionProyeccionPlanResponse> versiones) { }
+
+    /**
+     * Lo que el planificador debe saber antes de usar una candidata como vigente.
+     *
+     * @param semanaIniciada  hoy ya está dentro de la semana (o después): se re-planifica desde hoy (sección 9.5)
+     * @param partidasDelDia  partidas de hoy en la vigente, para marcar las que ya entraron a máquina (D-31)
+     */
+    public record ContextoCambioVigenteResponse(Integer idCandidata, int numeroVersion, int versionProyeccion,
+                                                Integer idVigente, Integer numeroVersionVigente,
+                                                Integer versionProyeccionVigente, LocalDate dia, boolean semanaIniciada,
+                                                boolean permitido, String motivo, int incidenciasPendientes,
+                                                int incidenciasConsideradas, int replanificaciones,
+                                                boolean stockDesactualizado, List<PartidaDelDiaResponse> partidasDelDia) { }
+
+    /** @param partidasEnMaquina partidas de hoy que ya entraron a máquina: quedan fijas (D-31) */
+    public record CambioVigenteRequest(List<String> partidasEnMaquina) { }
+
+    /** DIRECTO: la semana no empezó y la candidata pasa a vigente. REPLANIFICACION: se propone desde hoy. */
+    public enum ModoCambioVigente { DIRECTO, REPLANIFICACION }
+
+    /** @param replanificacion resultado de la re-planificación desde hoy, solo con el modo REPLANIFICACION */
+    public record CambioVigenteResponse(ModoCambioVigente modo, Integer idVigente, Integer numeroVersion,
+                                        ReplanificacionResponse replanificacion) { }
 
     public record CierreRequest(@NotNull(message = "Indica las partidas completadas (puede ser una lista vacía).")
                                 List<String> partidasCompletadas) { }

@@ -13,13 +13,15 @@ export type TipoComponente = 'PRINCIPAL' | 'COMPLEMENTO'
 export type ClasificacionResultado = 'ASIGNADA' | 'SOBRANTE' | 'BLOQUEADA'
 export type EstadoConfirmacionCierre = 'COMPLETADA' | 'ARRASTRADA'
 export type TipoGeneracion = 'INICIAL' | 'REPLANIFICACION'
-export type EstadoPlanificacion = 'ABIERTA' | 'CERRADA' | 'REEMPLAZADA' | 'INVALIDADA' | 'PROPUESTA'
+/** CANDIDATA (D-52): generada con otra versión de la proyección; no es vigente hasta que se usa como vigente. */
+export type EstadoPlanificacion = 'ABIERTA' | 'CERRADA' | 'REEMPLAZADA' | 'INVALIDADA' | 'PROPUESTA' | 'CANDIDATA'
 export type EstadoMaquina = 'OPERATIVA' | 'INDISPONIBLE' | 'EN_MANTENIMIENTO'
 export type TipoIndisponibilidad = 'INDISPONIBLE' | 'MANTENIMIENTO'
 export type TipoDato = 'PEDIDOS' | 'PARTIDAS' | 'PROYECCION_TEJEDURIA'
 export type TipoIncidencia = 'INCIDENCIA_MAQUINA' | 'PROBLEMA_COMPLEMENTO' | 'CAMBIO_PRIORIDAD'
-export type EstadoIncidencia = 'PENDIENTE' | 'CONSIDERADA'
-export type EstadoProyeccion = 'VIGENTE' | 'REEMPLAZADA' | 'ELIMINADA'
+export type EstadoIncidencia = 'PENDIENTE' | 'CONSIDERADA' | 'ATENDIDA' | 'ANULADA'
+/** D-52: VIGENTE es la versión de la planificación vigente; CARGADA, cualquier otra que se puede planificar. */
+export type EstadoProyeccion = 'VIGENTE' | 'CARGADA' | 'ELIMINADA'
 export type TipoAlerta = 'FALTANTE' | 'EXCEDENTE' | 'DESBALANCE_DIARIO'
 
 // ------------------------------------------------------------- sesión
@@ -50,6 +52,10 @@ export interface Indicadores {
 export interface GeneracionResponse {
   idPlanificacion: number
   numeroVersion: number
+  /** false si quedó como candidata: se generó con otra versión de la proyección (D-52). */
+  vigente: boolean
+  /** Versión de la proyección con la que se generó (V1, V2, ...). */
+  versionProyeccion: number
   indicadores: Indicadores
   detenidaPorTiempo: boolean
   advertencias: string[]
@@ -69,6 +75,8 @@ export interface PartidaCalendario {
   ordenSecuencia: number
   fechaDisponible: string
   estadoConfirmacionCierre: EstadoConfirmacionCierre | null
+  /** Solo en la vista previa de las recomendaciones (D-56): partida que se completaría tejiendo de más. */
+  recomendada?: { diaTejido: string; kgATejer: number }
 }
 
 export interface DiaMaquina {
@@ -111,6 +119,8 @@ export interface PartidaBloqueada {
   barca: string
   kg: number
   componentes: ComponenteBloqueada[]
+  /** D-51: motivo del algoritmo; null en versiones generadas antes de guardarlo. */
+  motivo: string | null
 }
 
 export interface Alerta {
@@ -167,6 +177,8 @@ export interface EstadoSemana {
   stockDesactualizado: string | null
   /** Re-planificación propuesta que espera confirmación (solo vale el mismo día en que se generó). */
   propuestaPendiente: { id: number; numeroVersion: number; estado: EstadoPlanificacion; fechaGeneracion: string; idProyeccion: number } | null
+  /** D-51: máquinas cuyas tonalidades aceptadas cambiaron después de generar la vigente. */
+  maquinasCambiadas: string[]
 }
 
 export interface Arrastrada {
@@ -218,13 +230,73 @@ export interface ReplanificacionResponse {
   numeroVersion: number | null
   idVigente: number
   fNueva: number
-  /** F de la vigente evaluada en el escenario nuevo (semana completa). */
+  /** F de la vigente evaluada sobre la misma instancia nueva (semana completa). */
   fVigente: number
   vigenteFactible: boolean
   incumplimientosVigente: string[]
   indicadores: Indicadores | null
   detenidaPorTiempo: boolean
   advertencias: string[]
+}
+
+// ------------------------------------------------------------ versiones de la proyección (D-52)
+export interface PlanificacionDeVersion {
+  id: number
+  numeroVersion: number
+  estado: EstadoPlanificacion
+  esVigente: boolean
+  tipoGeneracion: TipoGeneracion
+  fechaGeneracion: string
+  stockDesactualizado: boolean
+  indicadores: Indicadores
+  asignadas: number
+  sobrantes: number
+  bloqueadas: number
+}
+
+export interface VersionProyeccionPlan {
+  idProyeccion: number
+  /** Número de la versión: V1, V2, ... en orden de subida. */
+  version: number
+  fechaCarga: string
+  estado: EstadoProyeccion
+  kgTotales: number
+  /** null si la versión todavía no tiene planificación generada. */
+  planificacion: PlanificacionDeVersion | null
+}
+
+export interface VersionesSemana {
+  lunes: string
+  /** La planificación de la semana ya se cerró: todo queda en solo lectura. */
+  cerrada: boolean
+  idVigente: number | null
+  versiones: VersionProyeccionPlan[]
+}
+
+export interface ContextoCambioVigente {
+  idCandidata: number
+  numeroVersion: number
+  versionProyeccion: number
+  idVigente: number | null
+  numeroVersionVigente: number | null
+  versionProyeccionVigente: number | null
+  dia: string
+  /** Hoy ya está en la semana: se re-planifica desde hoy y lo anterior se conserva. */
+  semanaIniciada: boolean
+  permitido: boolean
+  motivo: string | null
+  incidenciasPendientes: number
+  incidenciasConsideradas: number
+  replanificaciones: number
+  stockDesactualizado: boolean
+  partidasDelDia: PartidaDelDia[]
+}
+
+export interface CambioVigenteResponse {
+  modo: 'DIRECTO' | 'REPLANIFICACION'
+  idVigente: number | null
+  numeroVersion: number | null
+  replanificacion: ReplanificacionResponse | null
 }
 
 export interface ConfirmacionResponse {
@@ -370,6 +442,8 @@ export interface Maquina {
   barca: string | null
   estado: EstadoMaquina
   estadoActual: EstadoMaquina
+  /** D-51: tonalidades que puede teñir, de Blanco a Oscuro (al menos una). */
+  tonalidadesAceptadas: Tonalidad[]
 }
 
 export interface Indisponibilidad {
@@ -418,3 +492,48 @@ export interface Pagina<T> {
   tamanio: number
   total: number
 }
+
+// ------------------------------------------------------------ tejido adicional recomendado (RF30, D-56)
+export interface RecomendacionTejido {
+  id: number
+  /** Día de la semana que llena en la máquina. */
+  diaLlena: string
+  partida: string
+  numeroOp: string
+  codigoArticulo: string
+  nombreArticulo: string
+  componente: 'PRINCIPAL' | 'COMPLEMENTO'
+  kg: number
+  /** Tejer a más tardar este día para que la tela llegue a tiempo. */
+  diaTejido: string
+  fechaEntrega: string | null
+  codigoColor: string
+  color: string
+  clasificacionColor: ClasificacionColor
+  tonalidad: Tonalidad
+  /** Kg de la partida completa. */
+  kgPartida: number
+}
+
+export interface MaquinaRecomendaciones {
+  maquina: string
+  faltan: number
+  espacioLibre: number
+  seCubren: number
+  kg: number
+  /** Por qué no se cubre todo el déficit, o null. */
+  mensaje: string | null
+  recomendaciones: RecomendacionTejido[]
+}
+
+export interface RecomendacionesTejido {
+  idPlanificacion: number
+  numeroVersion: number
+  versionProyeccion: number
+  esVigente: boolean
+  cerrada: boolean
+  totalKg: number
+  totalPartidas: number
+  maquinas: MaquinaRecomendaciones[]
+}
+

@@ -38,6 +38,10 @@ public class PartidaController {
         return servicio.listar(estado);
     }
 
+    /** Partidas pendientes sin ninguna máquina de su capacidad que acepte su tonalidad (D-51). */
+    @GetMapping("/partidas/sin-maquina-compatible")
+    public List<PartidaResponse> sinMaquinaCompatible() { return servicio.sinMaquinaCompatible(); }
+
     @PutMapping("/partidas/{id}")
     public PartidaModificadaResponse modificar(@PathVariable Integer id,
                                                @Valid @RequestBody ModificarPartidaRequest solicitud,

@@ -23,7 +23,7 @@ import pe.edu.pucp.spats.tejeduria.service.ProyeccionService.NuevoDetalle;
 
 /**
  * Importa la proyección de tejeduría de una semana (plantilla PROYECCION_TEJEDURIA). Cada carga crea una
- * versión nueva que pasa a ser la vigente; las anteriores se conservan (D-06). Los registros con fecha de
+ * versión nueva (V1, V2...) sin cambiar la planificación vigente; las anteriores se conservan (D-52). Los registros con fecha de
  * tejido fuera de la ventana sábado anterior–viernes se guardan, pero se avisa que no se considerarán.
  */
 @Component
@@ -39,7 +39,7 @@ public class ImportadorProyeccion {
         this.proyecciones = proyecciones;
     }
 
-    public ResultadoImportacion importar(ValidacionLibro v, LocalDate lunes, boolean confirmado, String archivo, Integer idCarga) {
+    public ResultadoImportacion importar(ValidacionLibro v, LocalDate lunes, String archivo, Integer idCarga) {
         SemanaPlanificacion semana = new SemanaPlanificacion(lunes);
         v.exigirEstructura();
         Map<String, DetallePedido> detallePorPar = detalles.listarCompletos().stream()
@@ -67,9 +67,9 @@ public class ImportadorProyeccion {
                     + semana.inicioVentanaProyeccion() + " a " + semana.finVentanaProyeccion() + " y no se considerarán al planificar.");
         v.rechazarSiHayErrores();
 
-        ProyeccionTejeduria version = proyecciones.registrarVersion(lunes, nuevos, confirmado, TipoOperacion.IMPORTAR, archivo, idCarga);
+        ProyeccionTejeduria version = proyecciones.registrarVersion(lunes, nuevos, TipoOperacion.IMPORTAR, archivo, idCarga);
         return new ResultadoImportacion.Constructor()
-                .nuevos("registros de proyección (versión " + version.getVersion() + ")", nuevos.size())
+                .nuevos("registros de proyección (versión V" + version.getVersion() + ")", nuevos.size())
                 .construir(v.advertencias());
     }
 }

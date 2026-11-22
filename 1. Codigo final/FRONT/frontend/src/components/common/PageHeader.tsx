@@ -6,15 +6,15 @@ interface PageHeaderProps {
   actions?: ReactNode
 }
 
-/** Encabezado de página consistente: título + descripción opcional + acciones a la derecha. */
+/** Encabezado de página (Carbon: page header): título, descripción opcional y acciones a la derecha. */
 export function PageHeader({ title, description, actions }: PageHeaderProps) {
   return (
     <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-      <div>
+      <div className="min-w-0 max-w-3xl">
         <h2 className="text-xl font-semibold text-ink sm:text-2xl">{title}</h2>
         {description && <p className="mt-1 text-sm text-ink-soft">{description}</p>}
       </div>
-      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+      {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
     </div>
   )
 }

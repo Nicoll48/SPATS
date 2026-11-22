@@ -7,6 +7,10 @@
 
 exportar_instancia_csv <- function(I, dir) {
   dir.create(dir, showWarnings = FALSE, recursive = TRUE)
+  # semana ISO del lunes: la usa el reparto diario del calendario (D-48)
+  write.csv(data.frame(parametro = c("lunes", "semana"),
+                       valor = c(format(I$lunes), strftime(I$lunes, "%V"))),
+            file.path(dir, "parametros.csv"), row.names = FALSE, quote = FALSE)
   h <- I$habil * 1L; colnames(h) <- paste0("h", seq_len(I$ND))
   write.csv(data.frame(maquina = I$maquinas$maquina, barca = I$maquinas$barca,
                        objetivo = I$O, minimo = I$L, maximo = I$U, h),

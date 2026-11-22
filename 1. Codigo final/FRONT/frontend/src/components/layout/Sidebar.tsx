@@ -68,8 +68,9 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
   }
 
   function leafClasses({ isActive }: { isActive: boolean }) {
-    return `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-      isActive ? 'bg-white text-[#002F6D] shadow-sm' : 'text-white/80 hover:bg-white/10 hover:text-white'
+    // Carbon (UI shell): el apartado activo se marca con una barra izquierda de 3 px y fondo resaltado.
+    return `flex min-h-10 items-center gap-3 rounded-r-lg border-l-[3px] px-3 py-2 text-sm font-medium transition-colors ${
+      isActive ? 'border-white bg-white/15 text-white' : 'border-transparent text-white/80 hover:bg-white/10 hover:text-white'
     }`
   }
 
@@ -102,7 +103,7 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
           onClick={() => handleGroupClick(item)}
           aria-expanded={expanded}
           title={collapsed ? item.label : undefined}
-          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+          className={`flex min-h-10 w-full items-center gap-3 rounded-r-lg border-l-[3px] border-transparent px-3 py-2 text-sm font-medium transition-colors ${
             hasActiveChild ? 'text-white' : 'text-white/80 hover:bg-white/10 hover:text-white'
           }`}
         >
@@ -116,7 +117,7 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
           )}
         </button>
         {expanded && (
-          <div className="ml-[22px] mt-1 flex flex-col gap-0.5 border-l border-white/25 pl-3">
+          <div className="mt-0.5 flex flex-col gap-0.5 pl-7">
             {item.children.map((child) => renderLeaf(child))}
           </div>
         )}

@@ -43,9 +43,10 @@ import spats.algoritmo.nucleo.PartidaExcluida;
  *       cuenta los lavados.</li>
  *   <li>BLOQUEADA (sección 6.2): las no conformadas por la prioridad de otras ({@code TELA_PRIORIZADA}) y
  *       las {@code SIN_TELA} con algún artículo que tuvo kilos en la semana. Las {@code SIN_TELA} sin
- *       ningún kilo no se registran (siguen PENDIENTE). Las {@code SIN_MAQUINA} no se registran y se
- *       informan como advertencia (D-12). En una re-planificación también quedan BLOQUEADA las que ya no
- *       tienen día hábil en la semana ({@code SIN_DIA_DISPONIBLE}, {@code TELA_DEVUELTA}).</li>
+ *       ningún kilo no se registran (siguen PENDIENTE). Las que no tienen ninguna máquina de su capacidad que
+ *       acepte su tonalidad ({@code SIN_MAQUINA_COMPATIBLE}, D-51) quedan BLOQUEADA. En una re-planificación
+ *       también quedan BLOQUEADA las que ya no tienen día hábil en la semana ({@code SIN_DIA_DISPONIBLE},
+ *       {@code TELA_DEVUELTA}). El motivo de cada BLOQUEADA se guarda en {@code motivo_bloqueo}.</li>
  *   <li>Bolsa: saldo inicial = stock inicial (lunes) o saldo final del día anterior; ingresos = proyección
  *       que queda disponible ese día según {@link RegistroProyeccion#fechaDisponible(LocalDate)} (la regla
  *       del algoritmo, no una copia); consumo = componentes de las partidas conformadas ese día. El saldo
@@ -75,7 +76,8 @@ public final class TraductorResultado {
         List<String> bloqueadas = bloqueadas(r.bloqueadas(), datos.partidas(), requerimientos, stock, ingresos, advertencias);
         List<FilaMaquina> maquinas = filasMaquina(r.maquinas(), r.asignaciones());
         List<FilaBolsa> bolsas = filasBolsa(dias, stock, ingresos, consumoPorDia(r.asignaciones(), requerimientos, dias), r);
-        return new ResultadoTraducido(partidas, bloqueadas, maquinas, bolsas, r.indicadores(), List.copyOf(advertencias));
+        return new ResultadoTraducido(partidas, bloqueadas, maquinas, bolsas, r.indicadores(), List.copyOf(advertencias),
+                motivos(r.bloqueadas(), bloqueadas));
     }
 
     /**
@@ -153,7 +155,7 @@ public final class TraductorResultado {
         }
         verificarSaldoFinal(saldoDomingo, r);
         return new ResultadoTraducido(filasPartida(r.asignaciones()), bloqueadas, filasMaquina(r.maquinas(), r.asignaciones()),
-                filas, r.indicadores(), List.copyOf(advertencias));
+                filas, r.indicadores(), List.copyOf(advertencias), motivos(r.bloqueadas(), bloqueadas));
     }
 
     // ------------------------------------------------------------- partidas
@@ -178,26 +180,30 @@ public final class TraductorResultado {
     static List<String> bloqueadas(List<PartidaBloqueada> noConformadas, List<Partida> partidas,
                                    Map<String, Map<String, BigDecimal>> requerimientos, Map<String, BigDecimal> stock,
                                    Map<String, BigDecimal[]> ingresos, List<String> advertencias) {
-        Map<String, String> barcaPorPartida = new HashMap<>();
-        partidas.forEach(p -> barcaPorPartida.put(p.codigo(), p.barca()));
         List<String> bloqueadas = new ArrayList<>();
         for (PartidaBloqueada b : noConformadas) {
             String motivo = b.motivo();
             if (PartidaBloqueada.TELA_PRIORIZADA.equals(motivo) || PartidaExcluida.SIN_DIA_DISPONIBLE.equals(motivo)
-                    || PartidaExcluida.TELA_DEVUELTA.equals(motivo)) {
+                    || PartidaExcluida.TELA_DEVUELTA.equals(motivo) || PartidaExcluida.SIN_MAQUINA_COMPATIBLE.equals(motivo)) {
                 bloqueadas.add(b.partida());
             } else if (PartidaExcluida.SIN_TELA.equals(motivo)) {
                 boolean algunArticuloTuvoKilos = requerimientos.getOrDefault(b.partida(), Map.of()).keySet().stream()
                         .anyMatch(clave -> tuvoKilos(clave, stock, ingresos));
                 if (algunArticuloTuvoKilos) bloqueadas.add(b.partida());
-            } else if (PartidaExcluida.SIN_MAQUINA.equals(motivo)) {
-                advertencias.add("La partida " + b.partida() + " tiene la barca " + barcaPorPartida.get(b.partida())
-                        + " sin máquina registrada; no se incluyó en la planificación.");
             } else {
                 advertencias.add("La partida " + b.partida() + " no se conformó: " + motivo);
             }
         }
         return bloqueadas;
+    }
+
+    /** Motivo de cada Bloqueada registrada (D-51: se guarda en planificacion_partida.motivo_bloqueo). */
+    static Map<String, String> motivos(List<PartidaBloqueada> noConformadas, List<String> bloqueadas) {
+        java.util.Set<String> registradas = new java.util.HashSet<>(bloqueadas);
+        Map<String, String> motivos = new java.util.LinkedHashMap<>();
+        for (PartidaBloqueada b : noConformadas)
+            if (registradas.contains(b.partida())) motivos.putIfAbsent(b.partida(), b.motivo());
+        return Map.copyOf(motivos);
     }
 
     static boolean tuvoKilos(String clave, Map<String, BigDecimal> stock, Map<String, BigDecimal[]> ingresos) {
